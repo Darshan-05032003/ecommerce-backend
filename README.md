@@ -61,6 +61,3 @@ src/main/java/com/example/ecommerce/
 
 ---
 
-## License
-
-MIT (or specify your preferred license).
