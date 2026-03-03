@@ -1,0 +1,31 @@
+# Local run and test instructions — do not push to GitHub
+LOCAL_SETUP_AND_TESTING.md
+
+# Build
+target/
+*.jar
+*.war
+*.ear
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# Maven
+pom.xml.tag
+pom.xml.releaseBackup
+.mvn/wrapper/maven-wrapper.jar
+
+# Logs and env
+*.log
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db

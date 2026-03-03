@@ -1,41 +1,66 @@
-# E-commerce Backend (Spring Boot)
+# E-commerce Backend
 
-Simple but production-style e-commerce backend built with Spring Boot and MySQL.
+A production-style e-commerce REST API built with **Spring Boot**, **MySQL**, and a layered architecture. The backend models users, products, shopping carts, and orders with JPA entities and exposes REST endpoints for catalog browsing, cart management, and order placement.
 
-## Tech stack
+---
 
-- Java 17
-- Spring Boot (Web, Data JPA, Security, Validation)
-- MySQL
-- Maven
+## Tech Stack
 
-## Domain model
+| Layer        | Technology                          |
+| ------------ | ----------------------------------- |
+| Language     | Java 17                             |
+| Framework    | Spring Boot 3.x                      |
+| Persistence  | Spring Data JPA, Hibernate, MySQL   |
+| Security     | Spring Security                     |
+| Build        | Maven                               |
+| Validation   | Bean Validation (Jakarta)            |
 
-- `User` with roles
-- `Product` catalog with price and stock
-- `CartItem` for user shopping carts
-- `Order` and `OrderItem` for placed orders
+---
 
-## How to run
+## Architecture
 
-1. Ensure you have Java 17+, Maven, and MySQL installed.
-2. Create a database named `ecommerce_db` and update credentials in `application.properties` if needed.
-3. From the project root, run:
+- **Domain**: JPA entities for `User`, `Role`, `Product`, `CartItem`, `Order`, `OrderItem`.
+- **Data**: JPA repositories with custom queries where needed.
+- **Business**: Service layer for product, user, cart, and order operations with transaction boundaries.
+- **API**: REST controllers under `/api` with JSON request/response and global exception handling.
 
-```bash
-mvn spring-boot:run
+---
+
+## API Overview
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET`  | `/api/products` | List all products (optional `?q=` search) |
+| `GET`  | `/api/products/{id}` | Get product by ID |
+| `POST` | `/api/products` | Create product |
+| `PUT`  | `/api/products/{id}` | Update product |
+| `DELETE` | `/api/products/{id}` | Delete product |
+| `GET`  | `/api/users` | List users |
+| `GET`  | `/api/users/{id}` | Get user by ID |
+| `POST` | `/api/users` | Register user |
+| `GET`  | `/api/users/{userId}/cart` | Get user's cart |
+| `POST` | `/api/users/{userId}/cart?productId=&quantity=` | Add item to cart |
+| `DELETE` | `/api/users/{userId}/cart` | Clear cart |
+| `GET`  | `/api/users/{userId}/orders` | List user's orders |
+| `POST` | `/api/users/{userId}/orders` | Place order from cart |
+
+---
+
+## Project Structure
+
+```
+src/main/java/com/example/ecommerce/
+├── EcommerceApplication.java
+├── config/          # Security, data seeding
+├── controller/      # REST endpoints
+├── exception/       # Global error handling
+├── model/           # JPA entities
+├── repository/      # Data access
+└── service/         # Business logic
 ```
 
-On startup, the app seeds:
+---
 
-- One admin user `admin@example.com` / `admin123`
-- Sample products (`Laptop`, `Wireless Mouse`)
+## License
 
-## Example endpoints
-
-- `GET /api/products` – list products
-- `POST /api/products` – create product
-- `POST /api/users` – register user
-- `POST /api/users/{userId}/cart?productId=&quantity=` – add to cart
-- `POST /api/users/{userId}/orders` – place order from cart
-
+MIT (or specify your preferred license).
