@@ -6,12 +6,16 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
 @Table(name = "products")
+@EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -35,22 +39,15 @@ public class Product {
     @Column(nullable = false)
     private Integer stockQuantity;
 
+    @Version
+    private Integer version;
+
+    @CreatedDate
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
+    @LastModifiedDate
     @Column(nullable = false)
     private Instant updatedAt;
-
-    @PrePersist
-    void onCreate() {
-        Instant now = Instant.now();
-        createdAt = now;
-        updatedAt = now;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        updatedAt = Instant.now();
-    }
 }
 
