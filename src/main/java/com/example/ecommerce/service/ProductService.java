@@ -1,7 +1,12 @@
 package com.example.ecommerce.service;
 
+import com.example.ecommerce.dto.ProductResponseDTO;
+import com.example.ecommerce.exception.InsufficientStockException;
+import com.example.ecommerce.exception.ResourceNotFoundException;
 import com.example.ecommerce.model.Product;
 import com.example.ecommerce.repository.ProductRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,30 +22,36 @@ public class ProductService {
         this.productRepository = productRepository;
     }
 
-    public Product create(Product product) {
-        return productRepository.save(product);
+    public ProductResponseDTO create(Product product) {
+        Product saved = productRepository.save(product);
+        return mapToDTO(saved);
     }
 
-    public Product getById(Long id) {
-        return productRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found with id " + id));
+    public ProductResponseDTO getById(Long id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id " + id));
+        return mapToDTO(product);
     }
 
-    public List<Product> listAll() {
-        return productRepository.findAll();
+    public Page<ProductResponseDTO> listAll(Pageable pageable) {
+        return productRepository.findAll(pageable).map(this::mapToDTO);
     }
 
-    public List<Product> searchByName(String query) {
-        return productRepository.findByNameContainingIgnoreCase(query);
+    // Custom search could also be paginated, simplified for now
+    public List<ProductResponseDTO> searchByName(String query) {
+        return productRepository.findByNameContainingIgnoreCase(query)
+                .stream().map(this::mapToDTO).toList();
     }
 
-    public Product update(Long id, Product updated) {
-        Product existing = getById(id);
+    public ProductResponseDTO update(Long id, Product updated) {
+        Product existing = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id " + id));
         existing.setName(updated.getName());
         existing.setDescription(updated.getDescription());
         existing.setPrice(updated.getPrice());
         existing.setStockQuantity(updated.getStockQuantity());
-        return productRepository.save(existing);
+        Product saved = productRepository.save(existing);
+        return mapToDTO(saved);
     }
 
     public void delete(Long id) {
@@ -48,12 +59,23 @@ public class ProductService {
     }
 
     public void decreaseStock(Long productId, int quantity) {
-        Product product = getById(productId);
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id " + productId));
         if (product.getStockQuantity() < quantity) {
-            throw new IllegalArgumentException("Insufficient stock for product " + productId);
+            throw new InsufficientStockException("Insufficient stock for product " + productId);
         }
         product.setStockQuantity(product.getStockQuantity() - quantity);
         productRepository.save(product);
+    }
+
+    private ProductResponseDTO mapToDTO(Product product) {
+        ProductResponseDTO dto = new ProductResponseDTO();
+        dto.setId(product.getId());
+        dto.setName(product.getName());
+        dto.setDescription(product.getDescription());
+        dto.setPrice(product.getPrice());
+        dto.setStockQuantity(product.getStockQuantity());
+        return dto;
     }
 }
 

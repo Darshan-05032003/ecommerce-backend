@@ -1,15 +1,20 @@
 package com.example.ecommerce.controller;
 
-import com.example.ecommerce.model.Order;
+import com.example.ecommerce.dto.OrderResponseDTO;
 import com.example.ecommerce.service.OrderService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/users/{userId}/orders")
+@Tag(name = "Orders", description = "Order management APIs")
 public class OrderController {
 
     private final OrderService orderService;
@@ -19,13 +24,19 @@ public class OrderController {
     }
 
     @GetMapping
-    public List<Order> listOrders(@PathVariable Long userId) {
-        return orderService.listOrdersForUser(userId);
+    @Operation(summary = "Get all orders for a user with pagination")
+    @PreAuthorize("hasRole('ADMIN') or authentication.name == @userService.getById(#userId).email")
+    public ResponseEntity<Page<OrderResponseDTO>> listOrders(
+            @PathVariable Long userId,
+            Pageable pageable) {
+        return ResponseEntity.ok(orderService.listOrdersForUser(userId, pageable));
     }
 
     @PostMapping
-    public ResponseEntity<Order> placeOrder(@PathVariable Long userId) {
-        Order order = orderService.placeOrder(userId);
+    @Operation(summary = "Place an order for a user")
+    @PreAuthorize("hasRole('ADMIN') or authentication.name == @userService.getById(#userId).email")
+    public ResponseEntity<OrderResponseDTO> placeOrder(@PathVariable Long userId) {
+        OrderResponseDTO order = orderService.placeOrder(userId);
         return ResponseEntity
                 .created(URI.create("/api/users/" + userId + "/orders/" + order.getId()))
                 .body(order);

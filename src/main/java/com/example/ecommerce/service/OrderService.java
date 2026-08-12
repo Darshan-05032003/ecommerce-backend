@@ -1,5 +1,7 @@
 package com.example.ecommerce.service;
 
+import com.example.ecommerce.dto.OrderItemResponseDTO;
+import com.example.ecommerce.dto.OrderResponseDTO;
 import com.example.ecommerce.model.CartItem;
 import com.example.ecommerce.model.Order;
 import com.example.ecommerce.model.OrderItem;
@@ -7,12 +9,15 @@ import com.example.ecommerce.model.User;
 import com.example.ecommerce.repository.CartItemRepository;
 import com.example.ecommerce.repository.OrderRepository;
 import com.example.ecommerce.repository.UserRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -33,12 +38,12 @@ public class OrderService {
         this.productService = productService;
     }
 
-    public List<Order> listOrdersForUser(Long userId) {
+    public Page<OrderResponseDTO> listOrdersForUser(Long userId, Pageable pageable) {
         User user = getUser(userId);
-        return orderRepository.findByUser(user);
+        return orderRepository.findByUser(user, pageable).map(this::mapToDTO);
     }
 
-    public Order placeOrder(Long userId) {
+    public OrderResponseDTO placeOrder(Long userId) {
         User user = getUser(userId);
         List<CartItem> cartItems = cartItemRepository.findByUser(user);
         if (cartItems.isEmpty()) {
@@ -77,12 +82,35 @@ public class OrderService {
 
         Order saved = orderRepository.save(order);
         cartItemRepository.deleteByUser(user);
-        return saved;
+        return mapToDTO(saved);
     }
 
     private User getUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with id " + userId));
+    }
+    
+    private OrderResponseDTO mapToDTO(Order order) {
+        OrderResponseDTO dto = new OrderResponseDTO();
+        dto.setId(order.getId());
+        dto.setUserId(order.getUser().getId());
+        dto.setTotalAmount(order.getTotalAmount());
+        dto.setStatus(order.getStatus().name());
+        dto.setCreatedAt(order.getCreatedAt());
+        
+        if (order.getItems() != null) {
+            dto.setItems(order.getItems().stream().map(item -> {
+                OrderItemResponseDTO itemDTO = new OrderItemResponseDTO();
+                itemDTO.setId(item.getId());
+                itemDTO.setProductId(item.getProduct().getId());
+                itemDTO.setProductName(item.getProduct().getName());
+                itemDTO.setQuantity(item.getQuantity());
+                itemDTO.setPrice(item.getPrice());
+                return itemDTO;
+            }).collect(Collectors.toList()));
+        }
+        
+        return dto;
     }
 }
 

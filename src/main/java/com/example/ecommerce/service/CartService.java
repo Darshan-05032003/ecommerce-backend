@@ -1,5 +1,6 @@
 package com.example.ecommerce.service;
 
+import com.example.ecommerce.dto.CartItemResponseDTO;
 import com.example.ecommerce.model.CartItem;
 import com.example.ecommerce.model.Product;
 import com.example.ecommerce.model.User;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -16,28 +18,30 @@ public class CartService {
 
     private final CartItemRepository cartItemRepository;
     private final UserRepository userRepository;
-    private final ProductService productService;
+    private final com.example.ecommerce.repository.ProductRepository productRepository;
 
     public CartService(CartItemRepository cartItemRepository,
                        UserRepository userRepository,
-                       ProductService productService) {
+                       com.example.ecommerce.repository.ProductRepository productRepository) {
         this.cartItemRepository = cartItemRepository;
         this.userRepository = userRepository;
-        this.productService = productService;
+        this.productRepository = productRepository;
     }
 
-    public List<CartItem> getCartForUser(Long userId) {
+    public List<CartItemResponseDTO> getCartForUser(Long userId) {
         User user = getUser(userId);
-        return cartItemRepository.findByUser(user);
+        return cartItemRepository.findByUser(user).stream()
+                .map(this::mapToDTO).collect(Collectors.toList());
     }
 
-    public CartItem addToCart(Long userId, Long productId, int quantity) {
+    public CartItemResponseDTO addToCart(Long userId, Long productId, int quantity) {
         if (quantity <= 0) {
             throw new IllegalArgumentException("Quantity must be positive");
         }
 
         User user = getUser(userId);
-        Product product = productService.getById(productId);
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("Product not found with id " + productId));
 
         CartItem cartItem = cartItemRepository
                 .findByUserIdAndProductId(userId, productId)
@@ -48,7 +52,7 @@ public class CartService {
                         .build());
 
         cartItem.setQuantity(cartItem.getQuantity() + quantity);
-        return cartItemRepository.save(cartItem);
+        return mapToDTO(cartItemRepository.save(cartItem));
     }
 
     public void clearCart(Long userId) {
@@ -59,6 +63,16 @@ public class CartService {
     private User getUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with id " + userId));
+    }
+    
+    private CartItemResponseDTO mapToDTO(CartItem item) {
+        CartItemResponseDTO dto = new CartItemResponseDTO();
+        dto.setId(item.getId());
+        dto.setProductId(item.getProduct().getId());
+        dto.setProductName(item.getProduct().getName());
+        dto.setQuantity(item.getQuantity());
+        dto.setPrice(item.getProduct().getPrice());
+        return dto;
     }
 }
 
