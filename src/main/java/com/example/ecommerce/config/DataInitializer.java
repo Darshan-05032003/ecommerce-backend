@@ -20,20 +20,15 @@ import java.util.Set;
 public class DataInitializer {
 
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
-
-    @Bean
     CommandLineRunner seedDatabase(RoleRepository roleRepository,
                                   UserRepository userRepository,
                                   ProductRepository productRepository,
                                   PasswordEncoder passwordEncoder) {
         return args -> {
-            Role adminRole = roleRepository.findByName("ADMIN")
+            Role adminRole = roleRepository.findByName("ROLE_ADMIN")
                     .orElseGet(() -> {
                         Role role = new Role();
-                        role.setName("ADMIN");
+                        role.setName("ROLE_ADMIN");
                         return roleRepository.save(role);
                     });
 
