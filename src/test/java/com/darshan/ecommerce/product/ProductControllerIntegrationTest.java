@@ -58,7 +58,7 @@ public class ProductControllerIntegrationTest {
                 .andReturn();
 
         String response = result.getResponse().getContentAsString();
-        adminToken = objectMapper.readTree(response).get("token").asText();
+        adminToken = objectMapper.readTree(response).get("token").asString();
     }
 
     @Test
