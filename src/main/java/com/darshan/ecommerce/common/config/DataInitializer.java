@@ -1,0 +1,66 @@
+package com.darshan.ecommerce.common.config;
+
+import com.darshan.ecommerce.product.Product;
+import com.darshan.ecommerce.product.ProductRepository;
+import com.darshan.ecommerce.user.Role;
+import com.darshan.ecommerce.user.RoleRepository;
+import com.darshan.ecommerce.user.User;
+import com.darshan.ecommerce.user.UserRepository;
+
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Set;
+
+@Configuration
+public class DataInitializer {
+
+    @Bean
+    CommandLineRunner seedDatabase(RoleRepository roleRepository,
+                                  UserRepository userRepository,
+                                  ProductRepository productRepository,
+                                  PasswordEncoder passwordEncoder) {
+        return args -> {
+            Role adminRole = roleRepository.findByName("ROLE_ADMIN")
+                    .orElseGet(() -> {
+                        Role role = new Role();
+                        role.setName("ROLE_ADMIN");
+                        return roleRepository.save(role);
+                    });
+
+            if (userRepository.count() == 0) {
+                User admin = User.builder()
+                        .email("admin@example.com")
+                        .fullName("Admin User")
+                        .password(passwordEncoder.encode("admin123"))
+                        .roles(Set.of(adminRole))
+                        .build();
+                userRepository.save(admin);
+            }
+
+            if (productRepository.count() == 0) {
+                List<Product> products = List.of(
+                        Product.builder()
+                                .name("Laptop")
+                                .description("14 inch lightweight laptop")
+                                .price(new BigDecimal("75000.00"))
+                                .stockQuantity(10)
+                                .build(),
+                        Product.builder()
+                                .name("Wireless Mouse")
+                                .description("Ergonomic wireless mouse")
+                                .price(new BigDecimal("1200.00"))
+                                .stockQuantity(50)
+                                .build()
+                );
+                productRepository.saveAll(products);
+            }
+        };
+    }
+}
+
