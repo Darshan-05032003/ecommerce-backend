@@ -12,7 +12,27 @@ A REST API for a small online shop built with Spring Boot and MySQL. It models u
 | Security     | Spring Security, JWT (jjwt)                  |
 | Validation   | Bean Validation (Jakarta)                    |
 | API docs     | springdoc-openapi (Swagger UI)               |
-| Build        | Maven (wrapper included)                     |
+| Testing      | JUnit 5, Mockito, AssertJ, Testcontainers    |
+| Build        | Maven (wrapper included), GitHub Actions     |
+
+## Configuration
+
+Settings are read from environment variables with local defaults (see `.env.example` for the full list) and bound to validated `@ConfigurationProperties` records under the `app.*` prefix. Three profiles exist:
+
+| Profile | Purpose |
+| ------- | ------- |
+| `dev`   | Local development against the `docker-compose.yml` stack. Provides a development-only JWT secret. |
+| `test`  | Used by the test suite. The database is a MySQL container started by Testcontainers. |
+| `prod`  | No defaults for secrets. The application refuses to start if `JWT_SECRET` is missing or shorter than 32 characters. |
+
+## Running Locally
+
+```
+docker compose up -d
+SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
+```
+
+The compose stack publishes MySQL on `localhost:3307`, Redis on `localhost:6380` and MailHog on `localhost:1025` (SMTP) and `http://localhost:8025` (web UI). The application listens on port 8081.
 
 ## Build and Test
 
@@ -20,7 +40,24 @@ A REST API for a small online shop built with Spring Boot and MySQL. It models u
 ./mvnw clean verify
 ```
 
-Integration tests run against an in-memory H2 database under the `test` profile. The application itself expects a MySQL database; the connection is configured in `src/main/resources/application.properties` and can be overridden with the standard `SPRING_DATASOURCE_*` environment variables, as `docker-compose.yml` does.
+Integration tests start a MySQL 8.4 container with Testcontainers, so Docker must be running. The same command runs in GitHub Actions on every push to `master` and on every pull request.
+
+## Errors and Correlation IDs
+
+Every error response is an RFC 9457 problem detail (`application/problem+json`). Validation failures list the rejected fields; unexpected errors return a generic message and are logged with their stack trace on the server.
+
+```json
+{
+  "status": 404,
+  "title": "Not Found",
+  "detail": "Product not found with id 999",
+  "instance": "/api/products/999",
+  "correlationId": "3c2d754f-6f0f-42d8-8240-5acc50746cd5",
+  "timestamp": "2026-10-22T17:53:40.442Z"
+}
+```
+
+Each request gets a correlation id: the value of the `X-Correlation-Id` request header if one is sent, otherwise a generated UUID. It is returned in the `X-Correlation-Id` response header, included in every error body and printed in every log line written while handling the request.
 
 ## API Overview
 
@@ -56,7 +93,8 @@ src/main/java/com/darshan/ecommerce/
 ├── cart/        # cart items and cart endpoints
 ├── order/       # orders, order items and order placement
 └── common/
-    ├── config/      # seed data
-    ├── exception/   # global exception handling
-    └── security/    # security filter chain configuration
+    ├── config/      # typed settings, clock, JPA auditing, seed data
+    ├── exception/   # problem detail error handling
+    ├── security/    # security filter chain configuration
+    └── web/         # correlation id filter
 ```
