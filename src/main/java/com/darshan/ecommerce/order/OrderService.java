@@ -2,6 +2,8 @@ package com.darshan.ecommerce.order;
 
 import com.darshan.ecommerce.cart.CartItem;
 import com.darshan.ecommerce.cart.CartItemRepository;
+import com.darshan.ecommerce.common.exception.BusinessRuleViolationException;
+import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
 import com.darshan.ecommerce.product.ProductService;
 import com.darshan.ecommerce.user.User;
 import com.darshan.ecommerce.user.UserRepository;
@@ -44,7 +46,7 @@ public class OrderService {
         User user = getUser(userId);
         List<CartItem> cartItems = cartItemRepository.findByUser(user);
         if (cartItems.isEmpty()) {
-            throw new IllegalStateException("Cart is empty");
+            throw new BusinessRuleViolationException("Cart is empty");
         }
 
         List<OrderItem> orderItems = new ArrayList<>();
@@ -84,7 +86,7 @@ public class OrderService {
 
     private User getUser(Long userId) {
         return userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found with id " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + userId));
     }
     
     private OrderResponseDTO mapToDTO(Order order) {

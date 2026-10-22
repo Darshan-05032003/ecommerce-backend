@@ -1,5 +1,8 @@
 package com.darshan.ecommerce.user;
 
+import com.darshan.ecommerce.common.exception.ConflictException;
+import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
+
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,7 +25,7 @@ public class UserService {
 
     public UserResponseDTO register(RegisterUserRequestDTO request) {
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new IllegalArgumentException("Email already registered");
+            throw new ConflictException("Email already registered");
         }
         
         Role customerRole = roleRepository.findByName("ROLE_CUSTOMER")
@@ -43,7 +46,7 @@ public class UserService {
     
     public User getEntityById(Long id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("User not found with id " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + id));
     }
 
     public List<UserResponseDTO> listAll() {

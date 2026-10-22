@@ -1,5 +1,6 @@
 package com.darshan.ecommerce.cart;
 
+import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
 import com.darshan.ecommerce.product.Product;
 import com.darshan.ecommerce.product.ProductRepository;
 import com.darshan.ecommerce.user.User;
@@ -40,7 +41,7 @@ public class CartService {
 
         User user = getUser(userId);
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found with id " + productId));
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id " + productId));
 
         CartItem cartItem = cartItemRepository
                 .findByUserIdAndProductId(userId, productId)
@@ -61,7 +62,7 @@ public class CartService {
 
     private User getUser(Long userId) {
         return userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found with id " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + userId));
     }
     
     private CartItemResponseDTO mapToDTO(CartItem item) {
