@@ -1,12 +1,13 @@
-# Local run and test instructions — do not push to GitHub
-LOCAL_SETUP_AND_TESTING.md
-
-# Build
+# Build output
 target/
 *.jar
 *.war
-*.ear
 *.class
+
+# Maven
+pom.xml.tag
+pom.xml.releaseBackup
+.mvn/wrapper/maven-wrapper.jar
 
 # IDE
 .idea/
@@ -15,16 +16,14 @@ target/
 .settings/
 .project
 .classpath
+.factorypath
 
-# Maven
-pom.xml.tag
-pom.xml.releaseBackup
-.mvn/wrapper/maven-wrapper.jar
-
-# Logs and env
-*.log
+# Environment and logs
 .env
-.env.local
+.env.*
+!.env.example
+*.log
+logs/
 
 # OS
 .DS_Store
