@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: ecommerce-backend
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3307/ecommerce}
+    username: ${DB_USERNAME:ecommerce}
+    password: ${DB_PASSWORD:ecommerce}
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+server:
+  port: ${SERVER_PORT:8081}
+
+logging:
+  pattern:
+    correlation: "[%X{correlationId:-}] "
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:}
+      issuer: ecommerce-backend
+      access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:15m}
+      refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:7d}
+  rate-limit:
+    login:
+      attempts: 5
+      window: 1m
+  orders:
+    idempotency-key-retention: 24h
