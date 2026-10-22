@@ -2,6 +2,8 @@ package com.example.ecommerce.security;
 
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
@@ -12,6 +14,7 @@ import java.util.Date;
 @Component
 public class JwtUtil {
 
+    private static final Logger log = LoggerFactory.getLogger(JwtUtil.class);
     private static final long JWT_EXPIRATION_MS = 86_400_000L;
 
     private final SecretKey key = Jwts.SIG.HS256.key().build();
@@ -38,7 +41,7 @@ public class JwtUtil {
             Jwts.parser().verifyWith(key).build().parseSignedClaims(authToken);
             return true;
         } catch (JwtException e) {
-            System.err.println("Invalid JWT token: " + e.getMessage());
+            log.debug("Rejected JWT: {}", e.getMessage());
         }
         return false;
     }

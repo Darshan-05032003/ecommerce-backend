@@ -37,7 +37,6 @@ public class ProductService {
         return productRepository.findAll(pageable).map(this::mapToDTO);
     }
 
-    // Custom search could also be paginated, simplified for now
     public List<ProductResponseDTO> searchByName(String query) {
         return productRepository.findByNameContainingIgnoreCase(query)
                 .stream().map(this::mapToDTO).toList();
