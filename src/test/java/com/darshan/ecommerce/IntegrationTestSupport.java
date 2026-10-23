@@ -12,8 +12,10 @@ import com.darshan.ecommerce.user.UserRepository;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
@@ -40,6 +42,8 @@ public class IntegrationTestSupport {
     }
 
     public static final class TestApi {
+
+        private static final ClassPathResource CLEAN_DATABASE = new ClassPathResource("clean-database.sql");
 
         public record Tokens(String accessToken, String refreshToken) {
         }
@@ -69,14 +73,10 @@ public class IntegrationTestSupport {
             this.cacheManager = cacheManager;
         }
 
-        // Child tables first; replaced_by points at the same table, so it is cleared before the delete.
-        // The Redis caches are shared by every test in the context, so they are emptied as well.
+        // The same script the repository slices run before each test (see @PersistenceTest). The Redis
+        // caches are shared by every test in the context, so they are emptied as well.
         public void cleanDatabase() {
-            jdbcTemplate.update("UPDATE refresh_tokens SET replaced_by = NULL");
-            for (String table : List.of("refresh_tokens", "idempotency_keys", "payments", "order_status_history",
-                    "order_items", "orders", "cart_items", "user_roles", "users", "products", "categories")) {
-                jdbcTemplate.update("DELETE FROM " + table);
-            }
+            new ResourceDatabasePopulator(CLEAN_DATABASE).execute(jdbcTemplate.getDataSource());
             clearCaches();
         }
 

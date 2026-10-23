@@ -1,0 +1,12 @@
+UPDATE refresh_tokens SET replaced_by = NULL;
+DELETE FROM refresh_tokens;
+DELETE FROM idempotency_keys;
+DELETE FROM payments;
+DELETE FROM order_status_history;
+DELETE FROM order_items;
+DELETE FROM orders;
+DELETE FROM cart_items;
+DELETE FROM user_roles;
+DELETE FROM users;
+DELETE FROM products;
+DELETE FROM categories;

@@ -14,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.jdbc.Sql;
 import org.springframework.transaction.annotation.Transactional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Import(TestcontainersConfiguration.class)
 @ActiveProfiles({"test", "dev"})
 @Transactional
+@Sql("/clean-database.sql")
 class DevDataSeederTest {
 
     @Autowired
@@ -42,8 +44,13 @@ class DevDataSeederTest {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    // The runner already ran at startup, but the MySQL container is shared with the other test
+    // classes. Each test therefore starts from empty tables (inside its rolled-back transaction)
+    // and runs the seeder itself.
     @Test
     void seedsAdminWithHashedPasswordFromConfiguration() {
+        seeder.run(new DefaultApplicationArguments());
+
         User admin = userRepository.findByEmail("seed-admin@example.com").orElseThrow();
 
         assertThat(admin.getPassword()).isNotEqualTo("SeededPass1!");
@@ -54,6 +61,7 @@ class DevDataSeederTest {
 
     @Test
     void seedsSampleCatalogueOnlyOnce() {
+        seeder.run(new DefaultApplicationArguments());
         seeder.run(new DefaultApplicationArguments());
 
         assertThat(categoryRepository.count()).isEqualTo(2);
