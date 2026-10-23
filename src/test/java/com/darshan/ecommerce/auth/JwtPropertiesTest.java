@@ -10,8 +10,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.validation.FieldError;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -62,6 +66,23 @@ class JwtPropertiesTest {
     @Test
     void devProfileStartsWithALocalDefaultSecret() {
         runner.withPropertyValues("spring.profiles.active=dev").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(JwtProperties.class).secret()).hasSizeGreaterThanOrEqualTo(32);
+        });
+    }
+
+    @Test
+    void devProfileStartsWithTheVariablesFromEnvExample() throws IOException {
+        // Compose passes a copied .env.example to the container, and an empty JWT_SECRET there
+        // would replace the dev default instead of falling back to it.
+        List<String> variables = Files.readAllLines(Path.of(".env.example")).stream()
+                .map(String::strip)
+                .filter(line -> !line.isEmpty() && !line.startsWith("#"))
+                .toList();
+        String[] properties = Stream.concat(Stream.of("spring.profiles.active=dev"), variables.stream())
+                .toArray(String[]::new);
+
+        runner.withPropertyValues(properties).run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context.getBean(JwtProperties.class).secret()).hasSizeGreaterThanOrEqualTo(32);
         });
