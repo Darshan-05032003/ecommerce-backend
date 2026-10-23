@@ -1,5 +1,7 @@
 package com.darshan.ecommerce.product;
 
+import com.darshan.ecommerce.category.Category;
+import com.darshan.ecommerce.category.CategoryRepository;
 import com.darshan.ecommerce.common.exception.InsufficientStockException;
 import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
 
@@ -15,14 +17,16 @@ import java.util.List;
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final CategoryRepository categoryRepository;
 
-    public ProductService(ProductRepository productRepository) {
+    public ProductService(ProductRepository productRepository, CategoryRepository categoryRepository) {
         this.productRepository = productRepository;
+        this.categoryRepository = categoryRepository;
     }
 
     public ProductResponseDTO create(CreateProductRequestDTO request) {
         Product product = new Product(request.getSku(), request.getName(), request.getDescription(),
-                request.getPrice(), request.getStockQuantity());
+                request.getPrice(), request.getStockQuantity(), category(request.getCategoryId()));
         return mapToDTO(productRepository.save(product));
     }
 
@@ -49,7 +53,13 @@ public class ProductService {
         existing.setDescription(request.getDescription());
         existing.setPrice(request.getPrice());
         existing.setStockQuantity(request.getStockQuantity());
+        existing.setCategory(category(request.getCategoryId()));
         return mapToDTO(productRepository.save(existing));
+    }
+
+    private Category category(Long categoryId) {
+        return categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new ResourceNotFoundException("Category not found with id " + categoryId));
     }
 
     public void delete(Long id) {

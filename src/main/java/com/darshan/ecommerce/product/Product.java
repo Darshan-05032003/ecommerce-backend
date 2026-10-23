@@ -42,19 +42,23 @@ public class Product extends BaseEntity {
     @Column(nullable = false)
     private boolean active = true;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "category_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "category_id", nullable = false)
     private Category category;
 
+    // Managed by Hibernate: incremented on every update and compared in the WHERE clause.
     @Version
     @Column(nullable = false)
+    @Setter(AccessLevel.NONE)
     private Integer version;
 
-    public Product(String sku, String name, String description, BigDecimal price, Integer stockQuantity) {
+    public Product(String sku, String name, String description, BigDecimal price, Integer stockQuantity,
+                   Category category) {
         this.sku = sku;
         this.name = name;
         this.description = description;
         this.price = price;
         this.stockQuantity = stockQuantity;
+        this.category = category;
     }
 }

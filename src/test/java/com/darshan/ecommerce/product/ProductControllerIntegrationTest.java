@@ -1,6 +1,8 @@
 package com.darshan.ecommerce.product;
 
 import com.darshan.ecommerce.IntegrationTest;
+import com.darshan.ecommerce.category.Category;
+import com.darshan.ecommerce.category.CategoryRepository;
 import com.darshan.ecommerce.user.Role;
 import com.darshan.ecommerce.user.RoleRepository;
 import com.darshan.ecommerce.user.User;
@@ -39,6 +41,9 @@ public class ProductControllerIntegrationTest {
 
     @Autowired
     private RoleRepository roleRepository;
+
+    @Autowired
+    private CategoryRepository categoryRepository;
     
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -70,6 +75,7 @@ public class ProductControllerIntegrationTest {
         req.setDescription("Desc");
         req.setPrice(new BigDecimal("99.99"));
         req.setStockQuantity(50);
+        req.setCategoryId(categoryRepository.save(new Category("Integration", null)).getId());
 
         // Create product (requires admin token)
         MvcResult createResult = mockMvc.perform(post("/api/v1/admin/products")

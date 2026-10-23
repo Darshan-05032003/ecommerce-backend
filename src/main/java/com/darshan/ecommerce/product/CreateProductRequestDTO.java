@@ -26,4 +26,7 @@ public class CreateProductRequestDTO {
     @NotNull
     @PositiveOrZero
     private Integer stockQuantity;
+
+    @NotNull
+    private Long categoryId;
 }

@@ -1,5 +1,7 @@
 package com.darshan.ecommerce.product;
 
+import com.darshan.ecommerce.category.Category;
+import com.darshan.ecommerce.category.CategoryRepository;
 import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +29,9 @@ public class ProductServiceTest {
     @Mock
     private ProductRepository productRepository;
 
+    @Mock
+    private CategoryRepository categoryRepository;
+
     @InjectMocks
     private ProductService productService;
 
@@ -34,7 +39,8 @@ public class ProductServiceTest {
 
     @BeforeEach
     void setUp() {
-        product = new Product("TEST-001", "Test Product", "Test Description", new BigDecimal("10.00"), 100);
+        product = new Product("TEST-001", "Test Product", "Test Description", new BigDecimal("10.00"), 100,
+                new Category("Test", null));
         ReflectionTestUtils.setField(product, "id", 1L);
     }
 

@@ -1,6 +1,8 @@
 package com.darshan.ecommerce.common.persistence;
 
 import com.darshan.ecommerce.cart.CartItem;
+import com.darshan.ecommerce.category.Category;
+import com.darshan.ecommerce.category.CategoryRepository;
 import com.darshan.ecommerce.cart.CartItemRepository;
 import com.darshan.ecommerce.product.Product;
 import com.darshan.ecommerce.product.ProductRepository;
@@ -27,6 +29,9 @@ class SchemaConstraintTest {
 
     @Autowired
     private CartItemRepository cartItemRepository;
+
+    @Autowired
+    private CategoryRepository categoryRepository;
 
     @Test
     void rejectsDuplicateEmail() {
@@ -85,7 +90,9 @@ class SchemaConstraintTest {
         return new User(email, "{noop}irrelevant", "Test User", Set.of());
     }
 
-    private static Product product(String sku, String name) {
-        return new Product(sku, name, "Description", new BigDecimal("9.99"), 5);
+    private Product product(String sku, String name) {
+        Category category = categoryRepository.findByName("Constraints")
+                .orElseGet(() -> categoryRepository.save(new Category("Constraints", null)));
+        return new Product(sku, name, "Description", new BigDecimal("9.99"), 5, category);
     }
 }

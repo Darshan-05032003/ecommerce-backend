@@ -1,5 +1,7 @@
 package com.darshan.ecommerce;
 
+import com.darshan.ecommerce.category.Category;
+import com.darshan.ecommerce.category.CategoryRepository;
 import com.darshan.ecommerce.product.Product;
 import com.darshan.ecommerce.product.ProductRepository;
 import com.darshan.ecommerce.user.Role;
@@ -30,9 +32,10 @@ public class IntegrationTestSupport {
     @Bean
     TestApi testApi(MockMvc mockMvc, ObjectMapper objectMapper, JdbcTemplate jdbcTemplate,
                     UserRepository userRepository, RoleRepository roleRepository,
-                    ProductRepository productRepository, PasswordEncoder passwordEncoder) {
+                    CategoryRepository categoryRepository, ProductRepository productRepository,
+                    PasswordEncoder passwordEncoder) {
         return new TestApi(mockMvc, objectMapper, jdbcTemplate, userRepository, roleRepository,
-                productRepository, passwordEncoder);
+                categoryRepository, productRepository, passwordEncoder);
     }
 
     public static final class TestApi {
@@ -45,17 +48,20 @@ public class IntegrationTestSupport {
         private final JdbcTemplate jdbcTemplate;
         private final UserRepository userRepository;
         private final RoleRepository roleRepository;
+        private final CategoryRepository categoryRepository;
         private final ProductRepository productRepository;
         private final PasswordEncoder passwordEncoder;
 
         TestApi(MockMvc mockMvc, ObjectMapper objectMapper, JdbcTemplate jdbcTemplate,
                 UserRepository userRepository, RoleRepository roleRepository,
-                ProductRepository productRepository, PasswordEncoder passwordEncoder) {
+                CategoryRepository categoryRepository, ProductRepository productRepository,
+                PasswordEncoder passwordEncoder) {
             this.mockMvc = mockMvc;
             this.objectMapper = objectMapper;
             this.jdbcTemplate = jdbcTemplate;
             this.userRepository = userRepository;
             this.roleRepository = roleRepository;
+            this.categoryRepository = categoryRepository;
             this.productRepository = productRepository;
             this.passwordEncoder = passwordEncoder;
         }
@@ -101,8 +107,16 @@ public class IntegrationTestSupport {
             return new Tokens(node.get("accessToken").asString(), node.get("refreshToken").asString());
         }
 
+        public Category createCategory(String name) {
+            return categoryRepository.findByName(name).orElseGet(() -> categoryRepository.save(new Category(name, null)));
+        }
+
         public Product createProduct(String sku, int stock) {
-            return productRepository.save(new Product(sku, "Product " + sku, "Description", new BigDecimal("19.99"), stock));
+            return createProduct(sku, new BigDecimal("19.99"), stock, createCategory("General"));
+        }
+
+        public Product createProduct(String sku, BigDecimal price, int stock, Category category) {
+            return productRepository.save(new Product(sku, "Product " + sku, "Description", price, stock, category));
         }
     }
 }

@@ -60,11 +60,13 @@ class SecurityMatrixTest {
     private Long customerId;
     private String customerToken;
     private String adminToken;
+    private Long categoryId;
     private Long productId;
 
     @BeforeAll
     void createUsers() throws Exception {
         api.cleanDatabase();
+        categoryId = api.createCategory("Matrix").getId();
         customerId = api.registerCustomer("customer@matrix.example", PASSWORD);
         api.createAdmin("admin@matrix.example", PASSWORD);
         customerToken = api.login("customer@matrix.example", PASSWORD).accessToken();
@@ -178,8 +180,9 @@ class SecurityMatrixTest {
         };
     }
 
-    private static Map<String, Object> productBody() {
+    private Map<String, Object> productBody() {
         return Map.of("sku", "NEW-" + COUNTER.incrementAndGet(), "name", "Matrix product",
-                "description", "Created by the security matrix", "price", "10.00", "stockQuantity", 3);
+                "description", "Created by the security matrix", "price", "10.00", "stockQuantity", 3,
+                "categoryId", categoryId);
     }
 }
