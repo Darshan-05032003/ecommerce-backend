@@ -1,6 +1,5 @@
 package com.darshan.ecommerce.common.exception;
 
-import com.darshan.ecommerce.common.web.CorrelationIdFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +19,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
-import java.time.Clock;
 import java.util.Comparator;
 import java.util.List;
 
@@ -35,10 +33,10 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    private final Clock clock;
+    private final ProblemDetailFactory problems;
 
-    public GlobalExceptionHandler(Clock clock) {
-        this.clock = clock;
+    public GlobalExceptionHandler(ProblemDetailFactory problems) {
+        this.problems = problems;
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
@@ -107,18 +105,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     protected ResponseEntity<Object> createResponseEntity(Object body, HttpHeaders headers, HttpStatusCode statusCode,
                                                           WebRequest request) {
         if (body instanceof ProblemDetail problem) {
-            stamp(problem);
+            problems.stamp(problem);
         }
         return super.createResponseEntity(body, headers, statusCode, request);
     }
 
     private ProblemDetail problem(HttpStatus status, String detail) {
-        return stamp(ProblemDetail.forStatusAndDetail(status, detail));
-    }
-
-    private ProblemDetail stamp(ProblemDetail problem) {
-        problem.setProperty("correlationId", CorrelationIdFilter.current());
-        problem.setProperty("timestamp", clock.instant());
-        return problem;
+        return problems.create(status, detail);
     }
 }

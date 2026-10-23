@@ -1,6 +1,5 @@
 package com.darshan.ecommerce.common.exception;
 
-import com.darshan.ecommerce.auth.JwtAuthenticationFilter;
 import com.darshan.ecommerce.common.config.ClockConfig;
 import com.darshan.ecommerce.common.web.CorrelationIdFilter;
 import jakarta.validation.Valid;
@@ -9,8 +8,6 @@ import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
@@ -35,13 +32,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * The JWT filter is excluded because its collaborators are not web components and
- * play no role here; Boot's default security chain stays active, so requests run as
- * an authenticated mock user and POSTs carry a CSRF token.
+ * The application's SecurityConfig is not part of the slice, so Boot's default chain
+ * stays active: requests run as an authenticated mock user and POSTs carry a CSRF token.
  */
-@WebMvcTest(controllers = GlobalExceptionHandlerTest.ErrorProbeController.class,
-        excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = JwtAuthenticationFilter.class))
-@Import({GlobalExceptionHandlerTest.ErrorProbeController.class, ClockConfig.class})
+@WebMvcTest(controllers = GlobalExceptionHandlerTest.ErrorProbeController.class)
+@Import({GlobalExceptionHandlerTest.ErrorProbeController.class, ClockConfig.class, ProblemDetailFactory.class})
 @WithMockUser
 class GlobalExceptionHandlerTest {
 
