@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CorrelationIdFilterTest {
 
     private final CorrelationIdFilter filter = new CorrelationIdFilter();
-    private final MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/products");
+    private final MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/products");
     private final MockHttpServletResponse response = new MockHttpServletResponse();
     private final AtomicReference<String> idSeenDownstream = new AtomicReference<>();
     private final FilterChain chain = (req, res) -> idSeenDownstream.set(MDC.get(CorrelationIdFilter.MDC_KEY));

@@ -11,26 +11,26 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/users")
-@Tag(name = "Users", description = "User management APIs")
+@RequestMapping("/api/v1/admin/users")
 @PreAuthorize("hasRole('ADMIN')")
-public class UserController {
+@Tag(name = "Admin: users", description = "User administration")
+public class AdminUserController {
 
     private final UserService userService;
 
-    public UserController(UserService userService) {
+    public AdminUserController(UserService userService) {
         this.userService = userService;
-    }
-
-    @GetMapping("/{id}")
-    @Operation(summary = "Get user by ID")
-    public UserResponse getById(@PathVariable Long id) {
-        return userService.getById(id);
     }
 
     @GetMapping
     @Operation(summary = "List all users")
     public List<UserResponse> list() {
         return userService.listAll();
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "Get any user by id")
+    public UserResponse getById(@PathVariable Long id) {
+        return userService.getById(id);
     }
 }

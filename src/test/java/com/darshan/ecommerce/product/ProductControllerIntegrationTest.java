@@ -79,7 +79,7 @@ public class ProductControllerIntegrationTest {
         req.setStockQuantity(50);
 
         // Create product (requires admin token)
-        MvcResult createResult = mockMvc.perform(post("/api/products")
+        MvcResult createResult = mockMvc.perform(post("/api/v1/admin/products")
                 .header("Authorization", "Bearer " + adminToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(req)))
@@ -90,7 +90,7 @@ public class ProductControllerIntegrationTest {
         Long productId = objectMapper.readTree(response).get("id").asLong();
 
         // Get product (public endpoint)
-        mockMvc.perform(get("/api/products/" + productId))
+        mockMvc.perform(get("/api/v1/products/" + productId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Integration Test Product"))
                 .andExpect(jsonPath("$.price").value(99.99));
