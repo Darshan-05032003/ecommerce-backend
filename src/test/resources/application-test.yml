@@ -2,3 +2,13 @@ app:
   security:
     jwt:
       secret: test-only-secret-0123456789abcdef0123456789
+
+spring:
+  jpa:
+    properties:
+      hibernate:
+        generate_statistics: true
+
+logging:
+  level:
+    org.hibernate.engine.internal.StatisticalLoggingSessionEventListener: WARN

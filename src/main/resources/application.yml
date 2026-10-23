@@ -9,6 +9,12 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+  cache:
+    type: redis
 
 server:
   port: ${SERVER_PORT:8081}
@@ -32,3 +38,7 @@ app:
       window: 1m
   orders:
     idempotency-key-retention: 24h
+  cache:
+    ttl:
+      products: ${CACHE_TTL_PRODUCTS:10m}
+      categories: ${CACHE_TTL_CATEGORIES:1h}
