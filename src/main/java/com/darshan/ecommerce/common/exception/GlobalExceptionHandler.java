@@ -1,5 +1,6 @@
 package com.darshan.ecommerce.common.exception;
 
+import jakarta.persistence.OptimisticLockException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,8 +52,10 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.CONFLICT, ex.getMessage());
     }
 
-    @ExceptionHandler(OptimisticLockingFailureException.class)
-    ProblemDetail handleOptimisticLock(OptimisticLockingFailureException ex) {
+    // Spring translates Hibernate's failure on flush into the first type; the JPA exception is
+    // listed as well for the case where a flush happens outside a translated repository call.
+    @ExceptionHandler({OptimisticLockingFailureException.class, OptimisticLockException.class})
+    ProblemDetail handleOptimisticLock(RuntimeException ex) {
         return problem(HttpStatus.CONFLICT, "The resource was modified by another request, reload it and retry");
     }
 

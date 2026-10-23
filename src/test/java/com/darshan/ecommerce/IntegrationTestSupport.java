@@ -1,5 +1,7 @@
 package com.darshan.ecommerce;
 
+import com.darshan.ecommerce.category.Category;
+import com.darshan.ecommerce.category.CategoryRepository;
 import com.darshan.ecommerce.product.Product;
 import com.darshan.ecommerce.product.ProductRepository;
 import com.darshan.ecommerce.user.Role;
@@ -8,6 +10,7 @@ import com.darshan.ecommerce.user.User;
 import com.darshan.ecommerce.user.UserRepository;
 
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -30,9 +33,10 @@ public class IntegrationTestSupport {
     @Bean
     TestApi testApi(MockMvc mockMvc, ObjectMapper objectMapper, JdbcTemplate jdbcTemplate,
                     UserRepository userRepository, RoleRepository roleRepository,
-                    ProductRepository productRepository, PasswordEncoder passwordEncoder) {
+                    CategoryRepository categoryRepository, ProductRepository productRepository,
+                    PasswordEncoder passwordEncoder, CacheManager cacheManager) {
         return new TestApi(mockMvc, objectMapper, jdbcTemplate, userRepository, roleRepository,
-                productRepository, passwordEncoder);
+                categoryRepository, productRepository, passwordEncoder, cacheManager);
     }
 
     public static final class TestApi {
@@ -45,28 +49,46 @@ public class IntegrationTestSupport {
         private final JdbcTemplate jdbcTemplate;
         private final UserRepository userRepository;
         private final RoleRepository roleRepository;
+        private final CategoryRepository categoryRepository;
         private final ProductRepository productRepository;
         private final PasswordEncoder passwordEncoder;
+        private final CacheManager cacheManager;
 
         TestApi(MockMvc mockMvc, ObjectMapper objectMapper, JdbcTemplate jdbcTemplate,
                 UserRepository userRepository, RoleRepository roleRepository,
-                ProductRepository productRepository, PasswordEncoder passwordEncoder) {
+                CategoryRepository categoryRepository, ProductRepository productRepository,
+                PasswordEncoder passwordEncoder, CacheManager cacheManager) {
             this.mockMvc = mockMvc;
             this.objectMapper = objectMapper;
             this.jdbcTemplate = jdbcTemplate;
             this.userRepository = userRepository;
             this.roleRepository = roleRepository;
+            this.categoryRepository = categoryRepository;
             this.productRepository = productRepository;
             this.passwordEncoder = passwordEncoder;
+            this.cacheManager = cacheManager;
         }
 
         // Child tables first; replaced_by points at the same table, so it is cleared before the delete.
+        // The Redis caches are shared by every test in the context, so they are emptied as well.
         public void cleanDatabase() {
             jdbcTemplate.update("UPDATE refresh_tokens SET replaced_by = NULL");
             for (String table : List.of("refresh_tokens", "order_items", "orders", "cart_items", "user_roles",
                     "users", "products", "categories")) {
                 jdbcTemplate.update("DELETE FROM " + table);
             }
+            clearCaches();
+        }
+
+        public void cleanCatalogue() {
+            for (String table : List.of("order_items", "orders", "cart_items", "products", "categories")) {
+                jdbcTemplate.update("DELETE FROM " + table);
+            }
+            clearCaches();
+        }
+
+        public void clearCaches() {
+            cacheManager.getCacheNames().forEach(name -> cacheManager.getCache(name).clear());
         }
 
         public String json(Object value) {
@@ -101,8 +123,16 @@ public class IntegrationTestSupport {
             return new Tokens(node.get("accessToken").asString(), node.get("refreshToken").asString());
         }
 
+        public Category createCategory(String name) {
+            return categoryRepository.findByName(name).orElseGet(() -> categoryRepository.save(new Category(name, null)));
+        }
+
         public Product createProduct(String sku, int stock) {
-            return productRepository.save(new Product(sku, "Product " + sku, "Description", new BigDecimal("19.99"), stock));
+            return createProduct(sku, new BigDecimal("19.99"), stock, createCategory("General"));
+        }
+
+        public Product createProduct(String sku, BigDecimal price, int stock, Category category) {
+            return productRepository.save(new Product(sku, "Product " + sku, "Description", price, stock, category));
         }
     }
 }

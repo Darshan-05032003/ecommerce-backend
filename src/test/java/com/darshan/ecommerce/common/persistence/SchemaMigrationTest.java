@@ -19,7 +19,7 @@ class SchemaMigrationTest {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank", String.class);
 
-        assertThat(versions).containsExactly("1", "2", "3");
+        assertThat(versions).containsExactly("1", "2", "3", "4");
     }
 
     @Test
@@ -39,9 +39,19 @@ class SchemaMigrationTest {
 
         assertThat(indexes).contains(
                 "uk_users_email", "uk_products_sku", "uk_cart_items_user_product", "uk_orders_order_number",
-                "idx_products_category", "idx_products_active", "idx_cart_items_product",
+                "idx_products_category", "idx_products_active_category", "idx_cart_items_product",
                 "idx_orders_user_created", "idx_order_items_order", "idx_order_items_product",
                 "uk_refresh_tokens_token_hash", "idx_refresh_tokens_family", "idx_refresh_tokens_user");
+        assertThat(indexes).doesNotContain("idx_products_active");
+    }
+
+    @Test
+    void requiresACategoryOnEveryProduct() {
+        String nullable = jdbcTemplate.queryForObject(
+                "SELECT is_nullable FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'products' AND column_name = 'category_id'", String.class);
+
+        assertThat(nullable).isEqualTo("NO");
     }
 
     @Test

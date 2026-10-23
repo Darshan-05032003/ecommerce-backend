@@ -88,8 +88,6 @@ public class DevDataSeeder implements ApplicationRunner {
 
     private static Product product(String sku, String name, String description, String price, int stock,
                                    Category category) {
-        Product product = new Product(sku, name, description, new BigDecimal(price), stock);
-        product.setCategory(category);
-        return product;
+        return new Product(sku, name, description, new BigDecimal(price), stock, category);
     }
 }

@@ -1,5 +1,7 @@
 package com.darshan.ecommerce.order;
 
+import com.darshan.ecommerce.category.Category;
+import com.darshan.ecommerce.category.CategoryRepository;
 import com.darshan.ecommerce.common.persistence.PersistenceTest;
 import com.darshan.ecommerce.product.Product;
 import com.darshan.ecommerce.product.ProductRepository;
@@ -29,6 +31,9 @@ class OrderPersistenceTest {
     private ProductRepository productRepository;
 
     @Autowired
+    private CategoryRepository categoryRepository;
+
+    @Autowired
     private UserRepository userRepository;
 
     @Autowired
@@ -38,14 +43,16 @@ class OrderPersistenceTest {
     private JdbcTemplate jdbcTemplate;
 
     private User user;
+    private Category category;
     private Product laptop;
     private Product mouse;
 
     @BeforeEach
     void setUp() {
         user = userRepository.save(new User("buyer@example.com", "{noop}irrelevant", "Buyer", Set.of()));
-        laptop = productRepository.save(new Product("LAP-1", "Laptop", "Laptop", new BigDecimal("1000.00"), 5));
-        mouse = productRepository.save(new Product("MOU-1", "Mouse", "Mouse", new BigDecimal("20.00"), 5));
+        category = categoryRepository.save(new Category("Electronics", null));
+        laptop = productRepository.save(new Product("LAP-1", "Laptop", "Laptop", new BigDecimal("1000.00"), 5, category));
+        mouse = productRepository.save(new Product("MOU-1", "Mouse", "Mouse", new BigDecimal("20.00"), 5, category));
         entityManager.flush();
     }
 
@@ -95,7 +102,7 @@ class OrderPersistenceTest {
     @Test
     void rejectsUpdateBasedOnStaleVersion() {
         Product saved = productRepository.saveAndFlush(
-                new Product("STALE-1", "Stale", "Stale", new BigDecimal("10.00"), 1));
+                new Product("STALE-1", "Stale", "Stale", new BigDecimal("10.00"), 1, category));
         entityManager.clear();
 
         Product firstAdmin = productRepository.findById(saved.getId()).orElseThrow();

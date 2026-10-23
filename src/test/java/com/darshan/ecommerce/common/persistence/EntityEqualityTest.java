@@ -61,7 +61,7 @@ class EntityEqualityTest {
     @Test
     void differentEntityTypesWithSameIdAreNotEqual() {
         Category category = new Category("Typed", null);
-        Product product = new Product("SKU-EQ", "Product", "Description", BigDecimal.ONE, 1);
+        Product product = new Product("SKU-EQ", "Product", "Description", BigDecimal.ONE, 1, category);
         ReflectionTestUtils.setField(category, "id", 42L);
         ReflectionTestUtils.setField(product, "id", 42L);
 
