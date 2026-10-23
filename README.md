@@ -15,6 +15,7 @@ A REST API for a small online shop built with Spring Boot and MySQL. It models u
 | Security     | Spring Security, JWT (jjwt), Bucket4j        |
 | Validation   | Bean Validation (Jakarta)                    |
 | API docs     | springdoc-openapi (Swagger UI)               |
+| Observability | Spring Boot Actuator, Micrometer, Prometheus format, ECS JSON logs |
 | Testing      | JUnit 5, Mockito, AssertJ, Testcontainers    |
 | Build        | Maven (wrapper included), GitHub Actions     |
 
@@ -26,7 +27,7 @@ Settings are read from environment variables with local defaults (see `.env.exam
 | ------- | ------- |
 | `dev`   | Local development against the `docker-compose.yml` stack. Provides a development-only JWT secret and seeds an admin account and a small catalogue. |
 | `test`  | Used by the test suite. The database is a MySQL container started by Testcontainers. |
-| `prod`  | No defaults for secrets. The application refuses to start if `JWT_SECRET` is missing or shorter than 32 characters. |
+| `prod`  | No defaults for secrets. The application refuses to start if `JWT_SECRET` is missing or shorter than 32 characters. Logs are written as one ECS JSON object per line. |
 
 ## Authentication
 
@@ -187,6 +188,73 @@ Every error response is an RFC 9457 problem detail (`application/problem+json`).
 
 Each request gets a correlation id: the value of the `X-Correlation-Id` request header if one is sent, otherwise a generated UUID. It is returned in the `X-Correlation-Id` response header, included in every error body and printed in every log line written while handling the request.
 
+## Observability
+
+### Actuator endpoints
+
+Only four endpoints are exposed over HTTP. Everything else Actuator offers (`env`, `beans`, `configprops`, `loggers`, `heapdump`, `threaddump`, ...) is not exposed at all and returns `404`, even to admins.
+
+| Endpoint | Access | Content |
+|----------|--------|---------|
+| `GET /actuator/health` | public | `{"status":"UP"}` for anonymous callers and customers; admins also see the `db` and `redis` components with their details |
+| `GET /actuator/health/liveness` | public | Whether the process is alive; does not check the database or Redis |
+| `GET /actuator/health/readiness` | public | Whether the instance can take traffic: readiness state, MySQL and Redis |
+| `GET /actuator/info` | ADMIN | Build information (artifact, version, build time) and the git commit when the build had a `.git` directory |
+| `GET /actuator/metrics` | ADMIN | Meter names; `/actuator/metrics/{name}` shows one meter with its tags |
+| `GET /actuator/prometheus` | ADMIN | All meters in the Prometheus text format |
+| `GET /actuator` | ADMIN | Links to the exposed endpoints |
+
+The mail server is deliberately not part of health: order emails are sent asynchronously after commit, and a MailHog or SMTP outage should not take the instance out of the load balancer.
+
+### Business metrics
+
+Besides the JVM, HTTP, Hikari and cache meters that Spring Boot registers, the application records:
+
+| Meter | Type | Tags | Meaning |
+|-------|------|------|---------|
+| `orders.placed` (`orders_placed_total`) | counter | `application` | Orders created and committed. Replayed requests are not counted. |
+| `orders.placement` (`orders_placement_seconds`) | timer | `outcome`: `created`, `replayed`, `rejected`, `failed` | Time to handle `POST /api/v1/me/orders`, including the commit |
+| `payments.failed` (`payments_failed_total`) | counter | `method`: `CARD`, `UPI`, `COD`; `reason`: `declined`, `timeout`, `error` | Payment attempts that did not succeed |
+
+All of them are registered at startup, so they appear with the value 0 before the first order. Tag values come from fixed enums; free text such as a decline reason never becomes a tag.
+
+### Scraping with Prometheus
+
+`/actuator/prometheus` requires an admin bearer token:
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8081/api/v1/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com","password":"Admin123!"}' | jq -r .accessToken)
+curl -s -H "Authorization: Bearer $TOKEN" localhost:8081/actuator/prometheus | grep -E '^(orders|payments)_'
+```
+
+A Prometheus job reads the token from a file:
+
+```yaml
+scrape_configs:
+  - job_name: ecommerce-backend
+    metrics_path: /actuator/prometheus
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/ecommerce-token
+    static_configs:
+      - targets: ["host.docker.internal:8081"]
+```
+
+Access tokens expire after 15 minutes, so this setup suits local use only. In a real deployment the management endpoints would be moved to a separate port (`management.server.port`) that is reachable only from inside the cluster network.
+
+### Slow call logging
+
+Methods of beans annotated with `@LogExecutionTime` (order placement, payments and the product search) are measured by an aspect. A call that takes longer than `SLOW_METHOD_THRESHOLD` (default `500ms`) is logged at WARN with the class, method and duration, never with the arguments.
+
+### Logs
+
+In `dev` and `test` the console shows Spring Boot's readable pattern with the correlation id in brackets. In `prod` every line is an ECS JSON document that log shippers can index without parsing:
+
+```json
+{"@timestamp":"2026-10-23T11:56:00.937853556Z","log":{"level":"INFO","logger":"com.darshan.ecommerce.payment.PaymentService"},"process":{"thread":{"name":"http-nio-8081-exec-1"}},"service":{"name":"ecommerce-backend","environment":"prod","node":{}},"message":"Payment 7 for order 42 declined","correlationId":"3c2d754f-6f0f-42d8-8240-5acc50746cd5","ecs":{"version":"8.11"}}
+```
+
 ## API Overview
 
 | Method | Endpoint | Access | Description |
@@ -224,6 +292,8 @@ Each request gets a correlation id: the value of the `X-Correlation-Id` request 
 | `POST` | `/api/v1/admin/categories` | ADMIN | Create a category |
 | `PUT`  | `/api/v1/admin/categories/{id}` | ADMIN | Rename or describe a category |
 | `DELETE` | `/api/v1/admin/categories/{id}` | ADMIN | Delete a category that has no products |
+| `GET`  | `/actuator/health` | public | Health status; details for ADMIN (see Observability) |
+| `GET`  | `/actuator/info`, `/actuator/metrics`, `/actuator/prometheus` | ADMIN | Build info and metrics |
 
 Every registered account has the CUSTOMER role. Everything under `/api/v1/admin/**` requires ADMIN both in the security filter chain and through `@PreAuthorize` on the controllers.
 
@@ -251,6 +321,7 @@ src/main/java/com/darshan/ecommerce/
     ├── exception/   # problem detail factory and global error handling
     ├── logging/     # masking helpers for log output
     ├── money/       # scale and rounding for amounts
+    ├── observability/ # @LogExecutionTime and the slow call aspect
     ├── persistence/ # base entity and auditor lookup
     ├── security/    # filter chain, CORS, principal, 401/403 problem responses
     ├── validation/  # custom Bean Validation constraints

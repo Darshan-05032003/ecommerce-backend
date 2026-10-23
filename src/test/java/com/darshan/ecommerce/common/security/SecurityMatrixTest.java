@@ -151,7 +151,16 @@ class SecurityMatrixTest {
                 row(HttpMethod.GET, "/api/v1/products", 200, 200, 200),
                 row(HttpMethod.GET, "/api/v1/products/{productId}", 200, 200, 200),
                 row(HttpMethod.GET, "/api/v1/categories", 200, 200, 200),
-                row(HttpMethod.GET, "/api/v1/categories/{categoryId}", 200, 200, 200)
+                row(HttpMethod.GET, "/api/v1/categories/{categoryId}", 200, 200, 200),
+                row(HttpMethod.GET, "/actuator/health", 200, 200, 200),
+                row(HttpMethod.GET, "/actuator/health/liveness", 200, 200, 200),
+                row(HttpMethod.GET, "/actuator/health/readiness", 200, 200, 200),
+                row(HttpMethod.GET, "/actuator", 401, 403, 200),
+                row(HttpMethod.GET, "/actuator/info", 401, 403, 200),
+                row(HttpMethod.GET, "/actuator/metrics", 401, 403, 200),
+                row(HttpMethod.GET, "/actuator/prometheus", 401, 403, 200),
+                row(HttpMethod.GET, "/actuator/env", 401, 404, 404),
+                row(HttpMethod.GET, "/actuator/beans", 401, 404, 404)
         ).flatMap(List::stream);
     }
 

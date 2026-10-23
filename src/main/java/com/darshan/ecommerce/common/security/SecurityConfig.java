@@ -5,6 +5,8 @@ import com.darshan.ecommerce.auth.JwtAuthenticationFilter;
 import com.darshan.ecommerce.auth.JwtService;
 import com.darshan.ecommerce.common.web.CorrelationIdFilter;
 
+import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
+import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
@@ -75,6 +77,11 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/products/**", "/api/v1/categories/**").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                // Health stays public for load balancers and container probes; anonymous callers get
+                // the status only (management.endpoint.health.show-details). Info, metrics and
+                // prometheus reveal versions and traffic, so they are for admins.
+                .requestMatchers(EndpointRequest.to(HealthEndpoint.class)).permitAll()
+                .requestMatchers(EndpointRequest.toAnyEndpoint()).hasRole("ADMIN")
                 .anyRequest().authenticated())
             .addFilterBefore(new JwtAuthenticationFilter(jwtService, userDetailsService, entryPoint),
                     UsernamePasswordAuthenticationFilter.class);
