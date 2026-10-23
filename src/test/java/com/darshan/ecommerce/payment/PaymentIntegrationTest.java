@@ -4,6 +4,7 @@ import com.darshan.ecommerce.IntegrationTest;
 import com.darshan.ecommerce.IntegrationTestSupport.TestApi;
 import com.darshan.ecommerce.cart.CartItem;
 import com.darshan.ecommerce.cart.CartItemRepository;
+import com.darshan.ecommerce.common.persistence.TestClockConfiguration;
 import com.darshan.ecommerce.order.OrderPlacementService;
 import com.darshan.ecommerce.order.OrderRepository;
 import com.darshan.ecommerce.order.PlaceOrderRequest;
@@ -25,6 +26,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -41,6 +43,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -84,6 +87,7 @@ class PaymentIntegrationTest {
     private Long aliceId;
     private String aliceToken;
     private String bobToken;
+    private String adminToken;
     private Product book;
 
     @BeforeAll
@@ -93,6 +97,8 @@ class PaymentIntegrationTest {
         api.registerCustomer("bob@payments.example", PASSWORD);
         aliceToken = api.login("alice@payments.example", PASSWORD).accessToken();
         bobToken = api.login("bob@payments.example", PASSWORD).accessToken();
+        api.createAdmin("admin@payments.example", PASSWORD);
+        adminToken = api.login("admin@payments.example", PASSWORD).accessToken();
     }
 
     @BeforeEach
@@ -282,6 +288,82 @@ class PaymentIntegrationTest {
                 .andExpect(jsonPath("$.errors[0].field").value("method"));
 
         assertThat(attempts(orderId)).isEmpty();
+    }
+
+    @Test
+    void cancellingAPaidOrderRefundsThePaymentAndReturnsTheStock() throws Exception {
+        long orderId = placeOrder(3);
+        pay(orderId, aliceToken, Map.of("method", "CARD", "paymentToken", "tok_visa")).andExpect(status().isCreated());
+
+        cancel(orderId)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.history[*].to").value(contains("CREATED", "PAID", "CANCELLED")));
+
+        assertThat(refundedAt(orderId)).isEqualTo(TestClockConfiguration.START);
+        assertThat(stockOf(book)).isEqualTo(10);
+    }
+
+    @Test
+    void aRejectedRefundLeavesThePaidOrderAndItsStockUntouched() throws Exception {
+        long orderId = placeOrder(3);
+        pay(orderId, aliceToken, Map.of("method", "CARD", "paymentToken", "tok_refundfail"))
+                .andExpect(status().isCreated());
+
+        cancel(orderId)
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.errorCode").value("PAYMENT_REFUND_FAILED"));
+
+        assertThat(orderStatus(orderId)).isEqualTo("PAID");
+        assertThat(historyRows(orderId)).isEqualTo(2);
+        assertThat(refundedAt(orderId)).isNull();
+        assertThat(stockOf(book)).isEqualTo(7);
+    }
+
+    @Test
+    void anAdminCancellingAPaidOrderAlsoRefundsIt() throws Exception {
+        long orderId = placeOrder(1);
+        pay(orderId, aliceToken, Map.of("method", "COD")).andExpect(status().isCreated());
+
+        mockMvc.perform(patch("/api/v1/admin/orders/" + orderId + "/status")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(api.json(Map.of("status", "CANCELLED", "reason", "Address not serviceable"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        assertThat(refundedAt(orderId)).isNotNull();
+        assertThat(stockOf(book)).isEqualTo(10);
+    }
+
+    @Test
+    void anOrderMarkedPaidWithoutARecordedPaymentIsCancelledWithoutARefund() throws Exception {
+        long orderId = placeOrder(1);
+        mockMvc.perform(patch("/api/v1/admin/orders/" + orderId + "/status")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(api.json(Map.of("status", "PAID"))))
+                .andExpect(status().isOk());
+
+        cancel(orderId).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"));
+        assertThat(attempts(orderId)).isEmpty();
+    }
+
+    private ResultActions cancel(long orderId) throws Exception {
+        return mockMvc.perform(post("/api/v1/me/orders/" + orderId + "/cancel")
+                .header(HttpHeaders.AUTHORIZATION, bearer(aliceToken)));
+    }
+
+    // Read through JPA so the instant is mapped exactly as the application wrote it, in UTC.
+    private Instant refundedAt(long orderId) {
+        return paymentRepository.findAll().stream()
+                .filter(payment -> payment.getOrder().getId() == orderId && payment.getStatus() == PaymentStatus.SUCCEEDED)
+                .findFirst().orElseThrow().getRefundedAt();
+    }
+
+    private int stockOf(Product product) {
+        return jdbcTemplate.queryForObject("SELECT stock_quantity FROM products WHERE id = ?", Integer.class,
+                product.getId());
     }
 
     private long placeOrder(int quantity) {

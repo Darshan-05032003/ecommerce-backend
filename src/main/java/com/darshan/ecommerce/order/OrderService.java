@@ -5,6 +5,7 @@ import com.darshan.ecommerce.cart.CartItemRepository;
 import com.darshan.ecommerce.common.exception.BusinessRuleViolationException;
 import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
 import com.darshan.ecommerce.common.web.PageResponse;
+import com.darshan.ecommerce.payment.PaymentRefunds;
 import com.darshan.ecommerce.product.ProductService;
 import com.darshan.ecommerce.user.UserRepository;
 
@@ -35,6 +36,7 @@ public class OrderService {
     private final CartItemRepository cartItemRepository;
     private final UserRepository userRepository;
     private final ProductService productService;
+    private final PaymentRefunds paymentRefunds;
     private final AuditorAware<String> auditor;
     private final Clock clock;
     private final EntityManager entityManager;
@@ -44,6 +46,7 @@ public class OrderService {
                         CartItemRepository cartItemRepository,
                         UserRepository userRepository,
                         ProductService productService,
+                        PaymentRefunds paymentRefunds,
                         AuditorAware<String> auditor,
                         Clock clock,
                         EntityManager entityManager) {
@@ -52,6 +55,7 @@ public class OrderService {
         this.cartItemRepository = cartItemRepository;
         this.userRepository = userRepository;
         this.productService = productService;
+        this.paymentRefunds = paymentRefunds;
         this.auditor = auditor;
         this.clock = clock;
         this.entityManager = entityManager;
@@ -151,6 +155,8 @@ public class OrderService {
     // The versioned UPDATE is flushed before stock is touched: if another request changed the order
     // in the meantime this fails with a 409 straight away, and a cancellation can never release the
     // same stock twice. Stock goes back with the same atomic UPDATE style, in product id order.
+    // A paid order is refunded after the order update and the stock release, so a database failure
+    // happens before money moves, and a failed refund rolls the whole cancellation back.
     private void applyStatus(Order order, OrderStatus target, String reason) {
         OrderStatus previous = order.changeStatus(target);
         orderRepository.flush();
@@ -158,6 +164,9 @@ public class OrderService {
             order.getItems().stream()
                     .sorted(Comparator.comparing(item -> item.getProduct().getId()))
                     .forEach(item -> productService.releaseStock(item.getProduct().getId(), item.getQuantity()));
+            if (previous == OrderStatus.PAID) {
+                paymentRefunds.refundFor(order.getId());
+            }
         }
         recordStatus(order, previous, reason);
     }
