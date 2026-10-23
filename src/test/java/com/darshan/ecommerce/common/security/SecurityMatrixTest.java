@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -61,6 +62,7 @@ class SecurityMatrixTest {
     private String customerToken;
     private String adminToken;
     private Long categoryId;
+    private Long emptyCategoryId;
     private Long productId;
 
     @BeforeAll
@@ -73,9 +75,12 @@ class SecurityMatrixTest {
         adminToken = api.login("admin@matrix.example", PASSWORD).accessToken();
     }
 
+    // A fresh product and an empty category per invocation keep the DELETE and PUT cases independent.
     @BeforeEach
-    void freshProduct() {
-        productId = api.createProduct("MTX-" + COUNTER.incrementAndGet(), 5).getId();
+    void freshProductAndCategory() {
+        int n = COUNTER.incrementAndGet();
+        productId = api.createProduct("MTX-" + n, 5).getId();
+        emptyCategoryId = api.createCategory("Empty " + n).getId();
     }
 
     static Stream<Arguments> matrix() {
@@ -88,11 +93,18 @@ class SecurityMatrixTest {
                 row(HttpMethod.GET, "/api/v1/admin/users", 401, 403, 200),
                 row(HttpMethod.GET, "/api/v1/admin/users/{customerId}", 401, 403, 200),
                 row(HttpMethod.GET, "/api/v1/admin/users/{customerId}/orders", 401, 403, 200),
+                row(HttpMethod.GET, "/api/v1/admin/products", 401, 403, 200),
+                row(HttpMethod.GET, "/api/v1/admin/products/{productId}", 401, 403, 200),
                 row(HttpMethod.POST, "/api/v1/admin/products", 401, 403, 201),
                 row(HttpMethod.PUT, "/api/v1/admin/products/{productId}", 401, 403, 200),
                 row(HttpMethod.DELETE, "/api/v1/admin/products/{productId}", 401, 403, 204),
+                row(HttpMethod.POST, "/api/v1/admin/categories", 401, 403, 201),
+                row(HttpMethod.PUT, "/api/v1/admin/categories/{emptyCategoryId}", 401, 403, 200),
+                row(HttpMethod.DELETE, "/api/v1/admin/categories/{emptyCategoryId}", 401, 403, 204),
                 row(HttpMethod.GET, "/api/v1/products", 200, 200, 200),
-                row(HttpMethod.GET, "/api/v1/products/{productId}", 200, 200, 200)
+                row(HttpMethod.GET, "/api/v1/products/{productId}", 200, 200, 200),
+                row(HttpMethod.GET, "/api/v1/categories", 200, 200, 200),
+                row(HttpMethod.GET, "/api/v1/categories/{categoryId}", 200, 200, 200)
         ).flatMap(List::stream);
     }
 
@@ -108,10 +120,13 @@ class SecurityMatrixTest {
     void enforcesTheAccessMatrix(HttpMethod method, String pathTemplate, Caller caller, int expectedStatus) throws Exception {
         String path = pathTemplate
                 .replace("{productId}", String.valueOf(productId))
-                .replace("{customerId}", String.valueOf(customerId));
+                .replace("{customerId}", String.valueOf(customerId))
+                .replace("{categoryId}", String.valueOf(categoryId))
+                .replace("{emptyCategoryId}", String.valueOf(emptyCategoryId));
         MockHttpServletRequestBuilder builder = request(method, path);
         if (method == HttpMethod.POST || method == HttpMethod.PUT) {
-            builder.contentType(MediaType.APPLICATION_JSON).content(api.json(productBody()));
+            Map<String, Object> body = path.contains("/categories") ? categoryBody() : productBody(method);
+            builder.contentType(MediaType.APPLICATION_JSON).content(api.json(body));
         }
         tokenFor(caller).ifPresent(token -> builder.header(HttpHeaders.AUTHORIZATION, "Bearer " + token));
 
@@ -180,9 +195,19 @@ class SecurityMatrixTest {
         };
     }
 
-    private Map<String, Object> productBody() {
-        return Map.of("sku", "NEW-" + COUNTER.incrementAndGet(), "name", "Matrix product",
+    private Map<String, Object> productBody(HttpMethod method) {
+        Map<String, Object> body = new HashMap<>(Map.of(
+                "sku", "NEW-MTX-" + String.format("%03d", COUNTER.incrementAndGet()), "name", "Matrix product",
                 "description", "Created by the security matrix", "price", "10.00", "stockQuantity", 3,
-                "categoryId", categoryId);
+                "categoryId", categoryId));
+        if (method == HttpMethod.PUT) {
+            body.put("active", true);
+            body.put("version", 0);
+        }
+        return body;
+    }
+
+    private static Map<String, Object> categoryBody() {
+        return Map.of("name", "Matrix category " + COUNTER.incrementAndGet());
     }
 }

@@ -2,59 +2,100 @@ package com.darshan.ecommerce.product;
 
 import com.darshan.ecommerce.category.Category;
 import com.darshan.ecommerce.category.CategoryRepository;
+import com.darshan.ecommerce.common.exception.ConflictException;
 import com.darshan.ecommerce.common.exception.InsufficientStockException;
 import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
+import com.darshan.ecommerce.common.web.PageResponse;
 
-import org.springframework.data.domain.Page;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-
 @Service
-@Transactional
+@Transactional(readOnly = true)
 public class ProductService {
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
+    private final ProductMapper mapper;
 
-    public ProductService(ProductRepository productRepository, CategoryRepository categoryRepository) {
+    public ProductService(ProductRepository productRepository, CategoryRepository categoryRepository,
+                          ProductMapper mapper) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
+        this.mapper = mapper;
     }
 
-    public ProductResponseDTO create(CreateProductRequestDTO request) {
-        Product product = new Product(request.getSku(), request.getName(), request.getDescription(),
-                request.getPrice(), request.getStockQuantity(), category(request.getCategoryId()));
-        return mapToDTO(productRepository.save(product));
+    public ProductResponse getActiveById(Long id) {
+        return productRepository.findByIdAndActiveTrue(id)
+                .map(mapper::toResponse)
+                .orElseThrow(() -> notFound(id));
     }
 
-    public ProductResponseDTO getById(Long id) {
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id " + id));
-        return mapToDTO(product);
+    public PageResponse<ProductResponse> listActive(ProductFilter filter, Pageable pageable) {
+        return page(filter.toSpecification().and(ProductSpecifications.active()), pageable);
     }
 
-    public Page<ProductResponseDTO> listAll(Pageable pageable) {
-        return productRepository.findAll(pageable).map(this::mapToDTO);
+    public PageResponse<ProductResponse> listAll(ProductFilter filter, Pageable pageable) {
+        return page(filter.toSpecification(), pageable);
     }
 
-    public List<ProductResponseDTO> searchByName(String query) {
-        return productRepository.findByNameContainingIgnoreCase(query)
-                .stream().map(this::mapToDTO).toList();
+    public ProductResponse getById(Long id) {
+        return mapper.toResponse(load(id));
     }
 
-    public ProductResponseDTO update(Long id, CreateProductRequestDTO request) {
-        Product existing = productRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id " + id));
-        existing.setSku(request.getSku());
-        existing.setName(request.getName());
-        existing.setDescription(request.getDescription());
-        existing.setPrice(request.getPrice());
-        existing.setStockQuantity(request.getStockQuantity());
-        existing.setCategory(category(request.getCategoryId()));
-        return mapToDTO(productRepository.save(existing));
+    // The existence check gives a clean 409; the unique index on sku is what makes it safe when two
+    // admins create the same SKU at once, and the handler maps that violation to 409 as well.
+    @Transactional
+    public ProductResponse create(CreateProductRequest request) {
+        requireSkuAvailable(request.sku());
+        Product product = new Product(request.sku(), request.name(), request.description(), request.price(),
+                request.stockQuantity(), category(request.categoryId()));
+        return mapper.toResponse(productRepository.save(product));
+    }
+
+    @Transactional
+    public ProductResponse update(Long id, UpdateProductRequest request) {
+        Product product = load(id);
+        if (!request.version().equals(product.getVersion())) {
+            throw new OptimisticLockingFailureException("Product " + id + " was modified after version "
+                    + request.version() + " was read");
+        }
+        if (!product.getSku().equals(request.sku())) {
+            requireSkuAvailable(request.sku());
+        }
+        mapper.applyUpdate(request, product);
+        product.setCategory(category(request.categoryId()));
+        // Flushing now runs the versioned UPDATE inside this method: a concurrent change that slipped
+        // past the check above surfaces here as a 409, and the response carries the new version.
+        return mapper.toResponse(productRepository.saveAndFlush(product));
+    }
+
+    // Soft delete: sold products are referenced by order lines and must stay for history, so the row
+    // stays and only disappears from the public catalogue. Deleting twice is a no-op.
+    @Transactional
+    public void delete(Long id) {
+        load(id).setActive(false);
+    }
+
+    @Transactional
+    public void decreaseStock(Long productId, int quantity) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> notFound(productId));
+        if (product.getStockQuantity() < quantity) {
+            throw new InsufficientStockException("Insufficient stock for product " + productId);
+        }
+        product.setStockQuantity(product.getStockQuantity() - quantity);
+    }
+
+    private PageResponse<ProductResponse> page(Specification<Product> specification, Pageable pageable) {
+        return PageResponse.from(productRepository.findAll(specification, pageable).map(mapper::toResponse));
+    }
+
+    private Product load(Long id) {
+        return productRepository.findWithCategoryById(id).orElseThrow(() -> notFound(id));
     }
 
     private Category category(Long categoryId) {
@@ -62,29 +103,13 @@ public class ProductService {
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id " + categoryId));
     }
 
-    public void delete(Long id) {
-        productRepository.deleteById(id);
-    }
-
-    public void decreaseStock(Long productId, int quantity) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id " + productId));
-        if (product.getStockQuantity() < quantity) {
-            throw new InsufficientStockException("Insufficient stock for product " + productId);
+    private void requireSkuAvailable(String sku) {
+        if (productRepository.existsBySku(sku)) {
+            throw new ConflictException("SKU already in use");
         }
-        product.setStockQuantity(product.getStockQuantity() - quantity);
-        productRepository.save(product);
     }
 
-    private ProductResponseDTO mapToDTO(Product product) {
-        ProductResponseDTO dto = new ProductResponseDTO();
-        dto.setId(product.getId());
-        dto.setSku(product.getSku());
-        dto.setName(product.getName());
-        dto.setDescription(product.getDescription());
-        dto.setPrice(product.getPrice());
-        dto.setStockQuantity(product.getStockQuantity());
-        return dto;
+    private static ResourceNotFoundException notFound(Long id) {
+        return new ResourceNotFoundException("Product not found with id " + id);
     }
 }
-

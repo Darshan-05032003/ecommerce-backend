@@ -10,6 +10,7 @@ import com.darshan.ecommerce.user.User;
 import com.darshan.ecommerce.user.UserRepository;
 
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -33,9 +34,9 @@ public class IntegrationTestSupport {
     TestApi testApi(MockMvc mockMvc, ObjectMapper objectMapper, JdbcTemplate jdbcTemplate,
                     UserRepository userRepository, RoleRepository roleRepository,
                     CategoryRepository categoryRepository, ProductRepository productRepository,
-                    PasswordEncoder passwordEncoder) {
+                    PasswordEncoder passwordEncoder, CacheManager cacheManager) {
         return new TestApi(mockMvc, objectMapper, jdbcTemplate, userRepository, roleRepository,
-                categoryRepository, productRepository, passwordEncoder);
+                categoryRepository, productRepository, passwordEncoder, cacheManager);
     }
 
     public static final class TestApi {
@@ -51,11 +52,12 @@ public class IntegrationTestSupport {
         private final CategoryRepository categoryRepository;
         private final ProductRepository productRepository;
         private final PasswordEncoder passwordEncoder;
+        private final CacheManager cacheManager;
 
         TestApi(MockMvc mockMvc, ObjectMapper objectMapper, JdbcTemplate jdbcTemplate,
                 UserRepository userRepository, RoleRepository roleRepository,
                 CategoryRepository categoryRepository, ProductRepository productRepository,
-                PasswordEncoder passwordEncoder) {
+                PasswordEncoder passwordEncoder, CacheManager cacheManager) {
             this.mockMvc = mockMvc;
             this.objectMapper = objectMapper;
             this.jdbcTemplate = jdbcTemplate;
@@ -64,15 +66,29 @@ public class IntegrationTestSupport {
             this.categoryRepository = categoryRepository;
             this.productRepository = productRepository;
             this.passwordEncoder = passwordEncoder;
+            this.cacheManager = cacheManager;
         }
 
         // Child tables first; replaced_by points at the same table, so it is cleared before the delete.
+        // The Redis caches are shared by every test in the context, so they are emptied as well.
         public void cleanDatabase() {
             jdbcTemplate.update("UPDATE refresh_tokens SET replaced_by = NULL");
             for (String table : List.of("refresh_tokens", "order_items", "orders", "cart_items", "user_roles",
                     "users", "products", "categories")) {
                 jdbcTemplate.update("DELETE FROM " + table);
             }
+            clearCaches();
+        }
+
+        public void cleanCatalogue() {
+            for (String table : List.of("order_items", "orders", "cart_items", "products", "categories")) {
+                jdbcTemplate.update("DELETE FROM " + table);
+            }
+            clearCaches();
+        }
+
+        public void clearCaches() {
+            cacheManager.getCacheNames().forEach(name -> cacheManager.getCache(name).clear());
         }
 
         public String json(Object value) {
