@@ -8,6 +8,8 @@ import com.darshan.ecommerce.common.web.PageResponse;
 import com.darshan.ecommerce.product.ProductService;
 import com.darshan.ecommerce.user.UserRepository;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -35,6 +37,7 @@ public class OrderService {
     private final ProductService productService;
     private final AuditorAware<String> auditor;
     private final Clock clock;
+    private final EntityManager entityManager;
 
     public OrderService(OrderRepository orderRepository,
                         OrderStatusHistoryRepository historyRepository,
@@ -42,7 +45,8 @@ public class OrderService {
                         UserRepository userRepository,
                         ProductService productService,
                         AuditorAware<String> auditor,
-                        Clock clock) {
+                        Clock clock,
+                        EntityManager entityManager) {
         this.orderRepository = orderRepository;
         this.historyRepository = historyRepository;
         this.cartItemRepository = cartItemRepository;
@@ -50,6 +54,7 @@ public class OrderService {
         this.productService = productService;
         this.auditor = auditor;
         this.clock = clock;
+        this.entityManager = entityManager;
     }
 
     // Runs inside the placement transaction opened by OrderPlacementService (MANDATORY): every line
@@ -116,10 +121,37 @@ public class OrderService {
         return changeStatus(anyOrder(orderId), request.status(), request.reason());
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Order payableOrder(Long userId, Long orderId) {
+        Order order = ownedOrder(userId, orderId);
+        if (!order.getStatus().canMoveTo(OrderStatus.PAID)) {
+            throw new InvalidOrderStateException(order.getStatus(), OrderStatus.PAID);
+        }
+        return order;
+    }
+
+    // SELECT ... FOR UPDATE with a version check: fails with 409 if the order changed since it was
+    // read, and otherwise makes a concurrent cancel or status change wait until the payment
+    // transaction ends, so an order cannot be cancelled while its payment is being charged.
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockForPayment(Order order) {
+        entityManager.lock(order, LockModeType.PESSIMISTIC_WRITE);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void markPaid(Order order, String reason) {
+        applyStatus(order, OrderStatus.PAID, reason);
+    }
+
+    private OrderDetailResponse changeStatus(Order order, OrderStatus target, String reason) {
+        applyStatus(order, target, reason);
+        return detail(order);
+    }
+
     // The versioned UPDATE is flushed before stock is touched: if another request changed the order
     // in the meantime this fails with a 409 straight away, and a cancellation can never release the
     // same stock twice. Stock goes back with the same atomic UPDATE style, in product id order.
-    private OrderDetailResponse changeStatus(Order order, OrderStatus target, String reason) {
+    private void applyStatus(Order order, OrderStatus target, String reason) {
         OrderStatus previous = order.changeStatus(target);
         orderRepository.flush();
         if (target == OrderStatus.CANCELLED) {
@@ -128,7 +160,6 @@ public class OrderService {
                     .forEach(item -> productService.releaseStock(item.getProduct().getId(), item.getQuantity()));
         }
         recordStatus(order, previous, reason);
-        return detail(order);
     }
 
     private void recordStatus(Order order, OrderStatus from, String reason) {
