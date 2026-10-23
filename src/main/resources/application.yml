@@ -36,6 +36,13 @@ app:
     login:
       attempts: 5
       window: 1m
+  async:
+    core-size: ${ASYNC_CORE_SIZE:2}
+    max-size: ${ASYNC_MAX_SIZE:4}
+    queue-capacity: ${ASYNC_QUEUE_CAPACITY:100}
+    thread-name-prefix: async-
+    rejection-policy: ${ASYNC_REJECTION_POLICY:CALLER_RUNS}
+    shutdown-timeout: 30s
   payments:
     gateway: ${PAYMENT_GATEWAY:simulated}
   orders:
