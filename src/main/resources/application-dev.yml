@@ -1,0 +1,8 @@
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:dev-only-secret-not-for-production-0123456789}
+
+logging:
+  level:
+    com.darshan.ecommerce: DEBUG
