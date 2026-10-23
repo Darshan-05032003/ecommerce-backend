@@ -16,8 +16,10 @@ public final class SortWhitelist {
 
     private final Set<String> allowed;
     private final String defaultProperty;
+    private final Sort.Direction defaultDirection;
 
-    private SortWhitelist(String defaultProperty, List<String> properties) {
+    private SortWhitelist(Sort.Direction defaultDirection, String defaultProperty, List<String> properties) {
+        this.defaultDirection = defaultDirection;
         this.defaultProperty = defaultProperty;
         this.allowed = new LinkedHashSet<>();
         this.allowed.add(defaultProperty);
@@ -25,12 +27,16 @@ public final class SortWhitelist {
     }
 
     public static SortWhitelist of(String defaultProperty, String... otherProperties) {
-        return new SortWhitelist(defaultProperty, List.of(otherProperties));
+        return of(Sort.Direction.ASC, defaultProperty, otherProperties);
+    }
+
+    public static SortWhitelist of(Sort.Direction defaultDirection, String defaultProperty, String... otherProperties) {
+        return new SortWhitelist(defaultDirection, defaultProperty, List.of(otherProperties));
     }
 
     public Sort parse(String value) {
         if (value == null || value.isBlank()) {
-            return withTieBreaker(Sort.by(Sort.Direction.ASC, defaultProperty));
+            return withTieBreaker(Sort.by(defaultDirection, defaultProperty));
         }
         String[] parts = value.split(",", -1);
         if (parts.length > 2) {

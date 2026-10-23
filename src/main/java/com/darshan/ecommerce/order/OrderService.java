@@ -4,8 +4,8 @@ import com.darshan.ecommerce.cart.CartItem;
 import com.darshan.ecommerce.cart.CartItemRepository;
 import com.darshan.ecommerce.common.exception.BusinessRuleViolationException;
 import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
+import com.darshan.ecommerce.common.web.PageResponse;
 import com.darshan.ecommerce.product.ProductService;
-import com.darshan.ecommerce.user.User;
 import com.darshan.ecommerce.user.UserRepository;
 
 import org.springframework.data.domain.AuditorAware;
@@ -18,6 +18,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -49,12 +52,6 @@ public class OrderService {
         this.clock = clock;
     }
 
-    @Transactional(readOnly = true)
-    public Page<OrderResponse> listOrdersForUser(Long userId, Pageable pageable) {
-        User user = getUser(userId);
-        return orderRepository.findByUser(user, pageable).map(OrderResponse::from);
-    }
-
     // Runs inside the placement transaction opened by OrderPlacementService (MANDATORY): every line
     // reserves stock, the order is saved and the ordered cart lines are removed, or nothing changes.
     // Any exception thrown here is unchecked, so the transaction rolls back by default.
@@ -81,13 +78,85 @@ public class OrderService {
         return OrderResponse.from(saved);
     }
 
+    @Transactional(readOnly = true)
+    public PageResponse<OrderResponse> listForUser(Long userId, Pageable pageable) {
+        return withItems(orderRepository.findIdsByUserId(userId, pageable));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<OrderResponse> listAnyUsersOrders(Long userId, Pageable pageable) {
+        if (!userRepository.existsById(userId)) {
+            throw new ResourceNotFoundException("User not found with id " + userId);
+        }
+        return withItems(orderRepository.findIdsByUserId(userId, pageable));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<OrderResponse> listAll(OrderStatus status, Pageable pageable) {
+        return withItems(orderRepository.findIdsByStatus(status, pageable));
+    }
+
+    // Another user's order answers 404, exactly like an order that does not exist, so ids cannot
+    // be probed to learn which orders exist.
+    @Transactional(readOnly = true)
+    public OrderDetailResponse getForUser(Long userId, Long orderId) {
+        return detail(ownedOrder(userId, orderId));
+    }
+
+    @Transactional(readOnly = true)
+    public OrderDetailResponse get(Long orderId) {
+        return detail(anyOrder(orderId));
+    }
+
+    public OrderDetailResponse cancelForUser(Long userId, Long orderId) {
+        return changeStatus(ownedOrder(userId, orderId), OrderStatus.CANCELLED, "Cancelled by customer");
+    }
+
+    public OrderDetailResponse changeStatus(Long orderId, UpdateOrderStatusRequest request) {
+        return changeStatus(anyOrder(orderId), request.status(), request.reason());
+    }
+
+    // The versioned UPDATE is flushed before stock is touched: if another request changed the order
+    // in the meantime this fails with a 409 straight away, and a cancellation can never release the
+    // same stock twice. Stock goes back with the same atomic UPDATE style, in product id order.
+    private OrderDetailResponse changeStatus(Order order, OrderStatus target, String reason) {
+        OrderStatus previous = order.changeStatus(target);
+        orderRepository.flush();
+        if (target == OrderStatus.CANCELLED) {
+            order.getItems().stream()
+                    .sorted(Comparator.comparing(item -> item.getProduct().getId()))
+                    .forEach(item -> productService.releaseStock(item.getProduct().getId(), item.getQuantity()));
+        }
+        recordStatus(order, previous, reason);
+        return detail(order);
+    }
+
     private void recordStatus(Order order, OrderStatus from, String reason) {
         historyRepository.save(new OrderStatusHistory(order, from, order.getStatus(),
                 auditor.getCurrentAuditor().orElseThrow(), clock.instant(), reason));
     }
 
-    private User getUser(Long userId) {
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + userId));
+    // The second query returns the orders in no particular order, so the page keeps the id order.
+    private PageResponse<OrderResponse> withItems(Page<Long> ids) {
+        Map<Long, Order> ordersById = ids.isEmpty() ? Map.of()
+                : orderRepository.findWithItemsByIdIn(ids.getContent()).stream()
+                        .collect(Collectors.toMap(Order::getId, Function.identity()));
+        return PageResponse.from(ids.map(id -> OrderResponse.from(ordersById.get(id))));
+    }
+
+    private OrderDetailResponse detail(Order order) {
+        return OrderDetailResponse.from(order, historyRepository.findByOrderIdOrderByChangedAtAscIdAsc(order.getId()));
+    }
+
+    private Order ownedOrder(Long userId, Long orderId) {
+        return orderRepository.findWithItemsByIdAndUserId(orderId, userId).orElseThrow(() -> notFound(orderId));
+    }
+
+    private Order anyOrder(Long orderId) {
+        return orderRepository.findWithItemsById(orderId).orElseThrow(() -> notFound(orderId));
+    }
+
+    private static ResourceNotFoundException notFound(Long orderId) {
+        return new ResourceNotFoundException("Order not found with id " + orderId);
     }
 }
