@@ -96,6 +96,25 @@ DELETE /api/v1/me/cart                     -> 204
 - Two simultaneous adds of the same product (a double click) end in one line with both quantities: the existing line is read with `SELECT ... FOR UPDATE`, and a request that loses the race to insert the first line is retried in a new transaction, where it merges into the line the other request created.
 - The cart is loaded with its products in one joined query whatever the number of lines. A test counts the statements with Hibernate statistics.
 
+## Orders
+
+```
+POST  /api/v1/me/orders                  Idempotency-Key: <client generated, e.g. a UUID>
+                                         { "shippingAddress": "221B Baker Street, London" }
+GET   /api/v1/me/orders?page=0&size=20&sort=createdAt,desc
+GET   /api/v1/me/orders/{id}
+POST  /api/v1/me/orders/{id}/cancel
+PATCH /api/v1/admin/orders/{id}/status   { "status": "SHIPPED", "reason": "Handed to courier" }
+```
+
+- Placing an order turns the whole cart into one order with status `CREATED` and an order number such as `ORD-2026-000123`. Each line keeps the unit price at the moment of ordering and its line total (rounded to two decimals with `HALF_EVEN`); the order total is the sum of the line totals. The ordered lines are removed from the cart.
+- Placement is one database transaction. Each line takes its stock with a single conditional update (`stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ? AND active = true`); if any line affects no row the whole order is rolled back, nothing is reserved and the cart stays as it was. The error is `422` with `errorCode` `OUT_OF_STOCK`, or `PRODUCT_UNAVAILABLE` for a product withdrawn after it was added to the cart. An empty cart is `422` `CART_EMPTY`.
+- `Idempotency-Key` is required (`400` `IDEMPOTENCY_KEY_MISSING`, or `IDEMPOTENCY_KEY_INVALID` for anything other than 1 to 100 letters, digits and `.`, `_`, `:`, `-`). Keys are scoped to the user. The key, a SHA-256 hash of the request body and the response are stored with the order. Repeating the request with the same key returns the stored response (same status and body) with an `Idempotent-Replayed: true` header and places nothing. The same key with a different body is `422` `IDEMPOTENCY_KEY_REUSED`. Concurrent requests with the same key create exactly one order: the key row is inserted first in the order transaction, so the other requests wait on its unique index and then replay the stored response. A request that fails stores nothing, so its key can be used again. Keys older than `ORDER_IDEMPOTENCY_KEY_RETENTION` (default 24 hours) are deleted by a scheduled job (`ORDER_IDEMPOTENCY_CLEANUP_CRON`, default hourly at minute 15).
+- Status lifecycle: `CREATED` to `PAID` to `SHIPPED` to `DELIVERED`, and `CANCELLED` from `CREATED` or `PAID` only. Any other change is `409`. Every change, including the creation, is written to `order_status_history` with the previous and new status, who made it, when, and an optional reason. The order detail endpoints return this history.
+- A customer can cancel their own order before it ships; cancelling (by the customer or an admin) returns the stock of every line in the same transaction. Orders carry a version column, so two concurrent changes of the same order cannot both succeed.
+- Another user's order answers `404`, the same as an order that does not exist.
+- Order lists are paged (`size` up to 100, `sort` by `createdAt` or `totalAmount`, newest first by default) and load their lines in a fixed number of queries: a page of order ids, the count, then the orders with their lines and products for those ids. A test counts the statements with Hibernate statistics. Admins can list all orders, optionally filtered by `status`.
+
 ## Running Locally
 
 ```
@@ -109,7 +128,7 @@ In the `dev` profile the application creates an admin account on first start. Th
 
 ## Database
 
-The schema is owned by Flyway migrations in `src/main/resources/db/migration` and applied on startup in every profile. `V1` creates the tables with primary and foreign keys, `NOT NULL`, `UNIQUE` (user email, product SKU, one cart line per user and product, order number) and `CHECK` constraints (non-negative price and stock, positive quantities), plus indexes for the query paths the application uses. `V2` inserts the two roles, `V3` adds the refresh token table and `V4` makes the product category mandatory and indexes active products by category. Hibernate runs with `ddl-auto=validate`, so a mismatch between the entities and the migrated schema fails startup instead of silently altering tables, and `open-in-view` is off, so every lazy association is loaded inside a service transaction.
+The schema is owned by Flyway migrations in `src/main/resources/db/migration` and applied on startup in every profile. `V1` creates the tables with primary and foreign keys, `NOT NULL`, `UNIQUE` (user email, product SKU, one cart line per user and product, order number) and `CHECK` constraints (non-negative price and stock, positive quantities), plus indexes for the query paths the application uses. `V2` inserts the two roles, `V3` adds the refresh token table, `V4` makes the product category mandatory and indexes active products by category, `V5` adds the order status history, shipping addresses, stored line totals and a check on the order status, and `V6` adds the idempotency key table. Hibernate runs with `ddl-auto=validate`, so a mismatch between the entities and the migrated schema fails startup instead of silently altering tables, and `open-in-view` is off, so every lazy association is loaded inside a service transaction.
 
 Every entity extends `BaseEntity`, which carries the id, `createdAt`, `updatedAt`, `createdBy` and `lastModifiedBy`. The timestamps come from the application `Clock` and the auditor is the authenticated user's email, or `system` when no user is authenticated. `Product` and `Order` carry a `@Version` column for optimistic locking. Order numbers have the form `ORD-2026-000123` and are taken from a per-year counter table in its own short transaction.
 
@@ -156,11 +175,16 @@ Each request gets a correlation id: the value of the `X-Correlation-Id` request 
 | `PATCH` | `/api/v1/me/cart/items/{productId}` | CUSTOMER, ADMIN | Set the quantity of a product in my cart |
 | `DELETE` | `/api/v1/me/cart/items/{productId}` | CUSTOMER, ADMIN | Remove a product from my cart |
 | `DELETE` | `/api/v1/me/cart` | CUSTOMER, ADMIN | Clear my cart |
-| `GET`  | `/api/v1/me/orders` | CUSTOMER, ADMIN | List my orders |
-| `POST` | `/api/v1/me/orders` | CUSTOMER, ADMIN | Place an order from my cart |
+| `GET`  | `/api/v1/me/orders` | CUSTOMER, ADMIN | List my orders (paged) |
+| `POST` | `/api/v1/me/orders` | CUSTOMER, ADMIN | Place an order from my cart; requires `Idempotency-Key` |
+| `GET`  | `/api/v1/me/orders/{id}` | CUSTOMER, ADMIN | One of my orders with its status history |
+| `POST` | `/api/v1/me/orders/{id}/cancel` | CUSTOMER, ADMIN | Cancel one of my orders that has not shipped |
 | `GET`  | `/api/v1/admin/users` | ADMIN | List users |
 | `GET`  | `/api/v1/admin/users/{id}` | ADMIN | Get any user |
-| `GET`  | `/api/v1/admin/users/{id}/orders` | ADMIN | List any user's orders |
+| `GET`  | `/api/v1/admin/users/{id}/orders` | ADMIN | List any user's orders (paged) |
+| `GET`  | `/api/v1/admin/orders` | ADMIN | List all orders, optionally by `status` (paged) |
+| `GET`  | `/api/v1/admin/orders/{id}` | ADMIN | Any order with its status history |
+| `PATCH` | `/api/v1/admin/orders/{id}/status` | ADMIN | Move an order to another status |
 | `GET`  | `/api/v1/admin/products` | ADMIN | List all products, including inactive ones |
 | `GET`  | `/api/v1/admin/products/{id}` | ADMIN | Get any product, including inactive ones |
 | `POST` | `/api/v1/admin/products` | ADMIN | Create a product; requires a unique `sku` |
@@ -186,9 +210,10 @@ src/main/java/com/darshan/ecommerce/
 ├── category/    # product categories
 ├── product/     # product entity, public catalogue and admin product endpoints
 ├── cart/        # cart lines, cart rules and totals, the /me/cart endpoints
-├── order/       # orders, order items, /me/orders and the admin order view
+├── order/       # orders and lines, status lifecycle and history, idempotent placement, /me/orders and admin order endpoints
 └── common/
-    ├── config/      # typed settings, clock, JPA auditing, Redis caches, development seed data
+    ├── config/      # typed settings, clock, JPA auditing, Redis caches, scheduling, development seed data
+    ├── crypto/      # SHA-256 helper
     ├── exception/   # problem detail factory and global error handling
     ├── logging/     # masking helpers for log output
     ├── money/       # scale and rounding for amounts

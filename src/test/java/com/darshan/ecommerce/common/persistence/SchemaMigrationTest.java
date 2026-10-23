@@ -19,7 +19,7 @@ class SchemaMigrationTest {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank", String.class);
 
-        assertThat(versions).containsExactly("1", "2", "3", "4");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6");
     }
 
     @Test
@@ -28,7 +28,8 @@ class SchemaMigrationTest {
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()", String.class);
 
         assertThat(tables).contains("roles", "users", "user_roles", "categories", "products",
-                "cart_items", "orders", "order_items", "order_number_sequence", "refresh_tokens");
+                "cart_items", "orders", "order_items", "order_number_sequence", "refresh_tokens",
+                "order_status_history", "idempotency_keys");
     }
 
     @Test
@@ -41,7 +42,9 @@ class SchemaMigrationTest {
                 "uk_users_email", "uk_products_sku", "uk_cart_items_user_product", "uk_orders_order_number",
                 "idx_products_category", "idx_products_active_category", "idx_cart_items_product",
                 "idx_orders_user_created", "idx_order_items_order", "idx_order_items_product",
-                "uk_refresh_tokens_token_hash", "idx_refresh_tokens_family", "idx_refresh_tokens_user");
+                "uk_refresh_tokens_token_hash", "idx_refresh_tokens_family", "idx_refresh_tokens_user",
+                "idx_orders_status_created", "idx_order_status_history_order",
+                "uk_idempotency_keys_user_key", "idx_idempotency_keys_created");
         assertThat(indexes).doesNotContain("idx_products_active");
     }
 

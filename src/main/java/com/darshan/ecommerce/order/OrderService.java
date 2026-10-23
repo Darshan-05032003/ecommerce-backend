@@ -4,92 +4,159 @@ import com.darshan.ecommerce.cart.CartItem;
 import com.darshan.ecommerce.cart.CartItemRepository;
 import com.darshan.ecommerce.common.exception.BusinessRuleViolationException;
 import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
+import com.darshan.ecommerce.common.web.PageResponse;
 import com.darshan.ecommerce.product.ProductService;
-import com.darshan.ecommerce.user.User;
 import com.darshan.ecommerce.user.UserRepository;
 
+import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
+import java.time.Clock;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
 public class OrderService {
 
+    static final String CART_EMPTY = "CART_EMPTY";
+
     private final OrderRepository orderRepository;
+    private final OrderStatusHistoryRepository historyRepository;
     private final CartItemRepository cartItemRepository;
     private final UserRepository userRepository;
     private final ProductService productService;
-    private final OrderNumberGenerator orderNumberGenerator;
+    private final AuditorAware<String> auditor;
+    private final Clock clock;
 
     public OrderService(OrderRepository orderRepository,
+                        OrderStatusHistoryRepository historyRepository,
                         CartItemRepository cartItemRepository,
                         UserRepository userRepository,
                         ProductService productService,
-                        OrderNumberGenerator orderNumberGenerator) {
+                        AuditorAware<String> auditor,
+                        Clock clock) {
         this.orderRepository = orderRepository;
+        this.historyRepository = historyRepository;
         this.cartItemRepository = cartItemRepository;
         this.userRepository = userRepository;
         this.productService = productService;
-        this.orderNumberGenerator = orderNumberGenerator;
+        this.auditor = auditor;
+        this.clock = clock;
     }
 
-    public Page<OrderResponseDTO> listOrdersForUser(Long userId, Pageable pageable) {
-        User user = getUser(userId);
-        return orderRepository.findByUser(user, pageable).map(this::mapToDTO);
-    }
-
-    public OrderResponseDTO placeOrder(Long userId) {
-        User user = getUser(userId);
-        List<CartItem> cartItems = cartItemRepository.findByUser(user);
+    // Runs inside the placement transaction opened by OrderPlacementService (MANDATORY): every line
+    // reserves stock, the order is saved and the ordered cart lines are removed, or nothing changes.
+    // Any exception thrown here is unchecked, so the transaction rolls back by default.
+    @Transactional(propagation = Propagation.MANDATORY)
+    public OrderResponse create(Long userId, String orderNumber, PlaceOrderRequest request) {
+        // Products are joined into the cart query, and the lines are reserved in product id order so
+        // two orders touching the same products lock the rows in the same order and cannot deadlock.
+        List<CartItem> cartItems = cartItemRepository.findCartWithProducts(userId).stream()
+                .sorted(Comparator.comparing(item -> item.getProduct().getId()))
+                .toList();
         if (cartItems.isEmpty()) {
-            throw new BusinessRuleViolationException("CART_EMPTY", "Cart is empty");
+            throw new BusinessRuleViolationException(CART_EMPTY, "Cart is empty");
         }
 
-        BigDecimal total = BigDecimal.ZERO;
-        for (CartItem cartItem : cartItems) {
-            productService.decreaseStock(cartItem.getProduct().getId(), cartItem.getQuantity());
-            total = total.add(cartItem.getProduct().getPrice()
-                    .multiply(BigDecimal.valueOf(cartItem.getQuantity())));
-        }
-
-        Order order = new Order(orderNumberGenerator.next(), user, total);
-        for (CartItem cartItem : cartItems) {
-            order.addItem(new OrderItem(cartItem.getProduct(), cartItem.getQuantity(),
-                    cartItem.getProduct().getPrice()));
+        Order order = new Order(orderNumber, userRepository.getReferenceById(userId), request.shippingAddress().strip());
+        for (CartItem line : cartItems) {
+            productService.reserveStock(line.getProduct().getId(), line.getQuantity());
+            order.addItem(new OrderItem(line.getProduct(), line.getQuantity(), line.getProduct().getPrice()));
         }
 
         Order saved = orderRepository.save(order);
-        cartItemRepository.deleteByUser(user);
-        return mapToDTO(saved);
+        recordStatus(saved, null, "Order placed");
+        cartItemRepository.deleteAllByIdInBatch(cartItems.stream().map(CartItem::getId).toList());
+        return OrderResponse.from(saved);
     }
 
-    private User getUser(Long userId) {
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + userId));
+    @Transactional(readOnly = true)
+    public PageResponse<OrderResponse> listForUser(Long userId, Pageable pageable) {
+        return withItems(orderRepository.findIdsByUserId(userId, pageable));
     }
 
-    private OrderResponseDTO mapToDTO(Order order) {
-        OrderResponseDTO dto = new OrderResponseDTO();
-        dto.setId(order.getId());
-        dto.setOrderNumber(order.getOrderNumber());
-        dto.setUserId(order.getUser().getId());
-        dto.setTotalAmount(order.getTotalAmount());
-        dto.setStatus(order.getStatus().name());
-        dto.setCreatedAt(order.getCreatedAt());
-        dto.setItems(order.getItems().stream().map(item -> {
-            OrderItemResponseDTO itemDTO = new OrderItemResponseDTO();
-            itemDTO.setId(item.getId());
-            itemDTO.setProductId(item.getProduct().getId());
-            itemDTO.setProductName(item.getProduct().getName());
-            itemDTO.setQuantity(item.getQuantity());
-            itemDTO.setPrice(item.getPrice());
-            return itemDTO;
-        }).toList());
-        return dto;
+    @Transactional(readOnly = true)
+    public PageResponse<OrderResponse> listAnyUsersOrders(Long userId, Pageable pageable) {
+        if (!userRepository.existsById(userId)) {
+            throw new ResourceNotFoundException("User not found with id " + userId);
+        }
+        return withItems(orderRepository.findIdsByUserId(userId, pageable));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<OrderResponse> listAll(OrderStatus status, Pageable pageable) {
+        return withItems(orderRepository.findIdsByStatus(status, pageable));
+    }
+
+    // Another user's order answers 404, exactly like an order that does not exist, so ids cannot
+    // be probed to learn which orders exist.
+    @Transactional(readOnly = true)
+    public OrderDetailResponse getForUser(Long userId, Long orderId) {
+        return detail(ownedOrder(userId, orderId));
+    }
+
+    @Transactional(readOnly = true)
+    public OrderDetailResponse get(Long orderId) {
+        return detail(anyOrder(orderId));
+    }
+
+    public OrderDetailResponse cancelForUser(Long userId, Long orderId) {
+        return changeStatus(ownedOrder(userId, orderId), OrderStatus.CANCELLED, "Cancelled by customer");
+    }
+
+    public OrderDetailResponse changeStatus(Long orderId, UpdateOrderStatusRequest request) {
+        return changeStatus(anyOrder(orderId), request.status(), request.reason());
+    }
+
+    // The versioned UPDATE is flushed before stock is touched: if another request changed the order
+    // in the meantime this fails with a 409 straight away, and a cancellation can never release the
+    // same stock twice. Stock goes back with the same atomic UPDATE style, in product id order.
+    private OrderDetailResponse changeStatus(Order order, OrderStatus target, String reason) {
+        OrderStatus previous = order.changeStatus(target);
+        orderRepository.flush();
+        if (target == OrderStatus.CANCELLED) {
+            order.getItems().stream()
+                    .sorted(Comparator.comparing(item -> item.getProduct().getId()))
+                    .forEach(item -> productService.releaseStock(item.getProduct().getId(), item.getQuantity()));
+        }
+        recordStatus(order, previous, reason);
+        return detail(order);
+    }
+
+    private void recordStatus(Order order, OrderStatus from, String reason) {
+        historyRepository.save(new OrderStatusHistory(order, from, order.getStatus(),
+                auditor.getCurrentAuditor().orElseThrow(), clock.instant(), reason));
+    }
+
+    // The second query returns the orders in no particular order, so the page keeps the id order.
+    private PageResponse<OrderResponse> withItems(Page<Long> ids) {
+        Map<Long, Order> ordersById = ids.isEmpty() ? Map.of()
+                : orderRepository.findWithItemsByIdIn(ids.getContent()).stream()
+                        .collect(Collectors.toMap(Order::getId, Function.identity()));
+        return PageResponse.from(ids.map(id -> OrderResponse.from(ordersById.get(id))));
+    }
+
+    private OrderDetailResponse detail(Order order) {
+        return OrderDetailResponse.from(order, historyRepository.findByOrderIdOrderByChangedAtAscIdAsc(order.getId()));
+    }
+
+    private Order ownedOrder(Long userId, Long orderId) {
+        return orderRepository.findWithItemsByIdAndUserId(orderId, userId).orElseThrow(() -> notFound(orderId));
+    }
+
+    private Order anyOrder(Long orderId) {
+        return orderRepository.findWithItemsById(orderId).orElseThrow(() -> notFound(orderId));
+    }
+
+    private static ResourceNotFoundException notFound(Long orderId) {
+        return new ResourceNotFoundException("Order not found with id " + orderId);
     }
 }

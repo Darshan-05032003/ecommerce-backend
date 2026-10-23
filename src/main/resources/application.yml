@@ -37,7 +37,8 @@ app:
       attempts: 5
       window: 1m
   orders:
-    idempotency-key-retention: 24h
+    idempotency-key-retention: ${ORDER_IDEMPOTENCY_KEY_RETENTION:24h}
+    idempotency-cleanup-cron: ${ORDER_IDEMPOTENCY_CLEANUP_CRON:0 15 * * * *}
   cache:
     ttl:
       products: ${CACHE_TTL_PRODUCTS:10m}

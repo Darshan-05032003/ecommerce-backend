@@ -83,6 +83,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return body;
     }
 
+    @ExceptionHandler(InvalidRequestException.class)
+    ProblemDetail handleInvalidRequest(InvalidRequestException ex) {
+        ProblemDetail body = problem(HttpStatus.BAD_REQUEST, ex.getMessage());
+        body.setProperty("errorCode", ex.getErrorCode());
+        return body;
+    }
+
     @ExceptionHandler(TooManyRequestsException.class)
     ResponseEntity<ProblemDetail> handleTooManyRequests(TooManyRequestsException ex) {
         long seconds = Math.max(1, (long) Math.ceil(ex.getRetryAfter().toNanos() / 1_000_000_000.0));
