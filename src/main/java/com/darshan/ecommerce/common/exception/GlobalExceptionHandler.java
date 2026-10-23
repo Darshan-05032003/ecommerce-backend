@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
@@ -57,6 +58,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler({OptimisticLockingFailureException.class, OptimisticLockException.class})
     ProblemDetail handleOptimisticLock(RuntimeException ex) {
         return problem(HttpStatus.CONFLICT, "The resource was modified by another request, reload it and retry");
+    }
+
+    // Lock timeouts and deadlocks that survived the caller's retries. The request did nothing
+    // wrong and may succeed if sent again, so this is a conflict, not a server error.
+    @ExceptionHandler(ConcurrencyFailureException.class)
+    ProblemDetail handleConcurrencyFailure(ConcurrencyFailureException ex, HttpServletRequest request) {
+        log.warn("Concurrency failure on {} {}: {}", request.getMethod(), request.getRequestURI(),
+                ex.getClass().getSimpleName());
+        return problem(HttpStatus.CONFLICT, "The request collided with a concurrent request, retry it");
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
