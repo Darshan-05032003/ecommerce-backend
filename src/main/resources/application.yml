@@ -57,6 +57,8 @@ app:
   orders:
     idempotency-key-retention: ${ORDER_IDEMPOTENCY_KEY_RETENTION:24h}
     idempotency-cleanup-cron: ${ORDER_IDEMPOTENCY_CLEANUP_CRON:0 15 * * * *}
+  observability:
+    slow-method-threshold: ${SLOW_METHOD_THRESHOLD:500ms}
   cache:
     ttl:
       products: ${CACHE_TTL_PRODUCTS:10m}

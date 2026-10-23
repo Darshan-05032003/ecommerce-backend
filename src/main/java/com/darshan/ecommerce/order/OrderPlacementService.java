@@ -3,6 +3,7 @@ package com.darshan.ecommerce.order;
 import com.darshan.ecommerce.common.crypto.Sha256;
 import com.darshan.ecommerce.common.exception.BusinessRuleViolationException;
 import com.darshan.ecommerce.common.exception.InvalidRequestException;
+import com.darshan.ecommerce.common.observability.LogExecutionTime;
 import com.darshan.ecommerce.order.IdempotencyKeyStore.StoredResponse;
 
 import org.slf4j.Logger;
@@ -25,6 +26,7 @@ import java.util.regex.Pattern;
 // starts over, finds the committed key and replays the stored response. If the first request
 // rolls back (out of stock, empty cart), its key row disappears with it and the key stays usable.
 @Service
+@LogExecutionTime
 public class OrderPlacementService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderPlacementService.class);

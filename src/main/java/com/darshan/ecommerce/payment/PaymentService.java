@@ -3,6 +3,7 @@ package com.darshan.ecommerce.payment;
 import com.darshan.ecommerce.common.exception.BusinessRuleViolationException;
 import com.darshan.ecommerce.common.exception.ConflictException;
 import com.darshan.ecommerce.common.exception.UpstreamServiceException;
+import com.darshan.ecommerce.common.observability.LogExecutionTime;
 import com.darshan.ecommerce.order.Order;
 import com.darshan.ecommerce.order.OrderService;
 
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@LogExecutionTime
 public class PaymentService {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentService.class);

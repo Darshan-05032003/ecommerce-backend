@@ -6,6 +6,7 @@ import com.darshan.ecommerce.common.config.CacheNames;
 import com.darshan.ecommerce.common.exception.BusinessRuleViolationException;
 import com.darshan.ecommerce.common.exception.ConflictException;
 import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
+import com.darshan.ecommerce.common.observability.LogExecutionTime;
 import com.darshan.ecommerce.common.web.PageResponse;
 
 import org.springframework.cache.annotation.CacheEvict;
@@ -48,6 +49,7 @@ public class ProductService {
 
     // Pages are not cached: every combination of filters, sort and page would be its own entry, hits
     // would be rare, and one product change would make an unknown number of pages stale.
+    @LogExecutionTime
     public PageResponse<ProductResponse> listActive(ProductFilter filter, Pageable pageable) {
         return page(filter.toSpecification().and(ProductSpecifications.active()), pageable);
     }
