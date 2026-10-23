@@ -2,6 +2,9 @@ app:
   security:
     jwt:
       secret: ${JWT_SECRET:dev-only-secret-not-for-production-0123456789}
+  seed:
+    admin-email: ${APP_ADMIN_EMAIL:admin@example.com}
+    admin-password: ${APP_ADMIN_PASSWORD:Admin123!}
 
 logging:
   level:
