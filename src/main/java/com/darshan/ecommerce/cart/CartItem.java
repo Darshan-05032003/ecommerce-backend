@@ -14,14 +14,12 @@ import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 @Entity
 @Table(name = "cart_items", uniqueConstraints = {
         @UniqueConstraint(name = "uk_cart_items_user_product", columnNames = {"user_id", "product_id"})
 })
 @Getter
-@Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class CartItem extends BaseEntity {
 
@@ -39,6 +37,10 @@ public class CartItem extends BaseEntity {
     public CartItem(User user, Product product, Integer quantity) {
         this.user = user;
         this.product = product;
+        this.quantity = quantity;
+    }
+
+    void changeQuantity(int quantity) {
         this.quantity = quantity;
     }
 }

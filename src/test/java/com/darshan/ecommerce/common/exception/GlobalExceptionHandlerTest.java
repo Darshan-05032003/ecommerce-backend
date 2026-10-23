@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -103,7 +104,15 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.status").value(422))
                 .andExpect(jsonPath("$.detail").value("Cart is empty"))
+                .andExpect(jsonPath("$.errorCode").value("CART_EMPTY"))
                 .andExpect(jsonPath("$.correlationId", matchesPattern(UUID_PATTERN)));
+    }
+
+    @Test
+    void aLockFailureIs409RatherThanAServerError() throws Exception {
+        mockMvc.perform(get("/probe/deadlock"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("The request collided with a concurrent request, retry it"));
     }
 
     @Test
@@ -183,7 +192,12 @@ class GlobalExceptionHandlerTest {
 
         @GetMapping("/business-rule")
         void businessRule() {
-            throw new BusinessRuleViolationException("Cart is empty");
+            throw new BusinessRuleViolationException("CART_EMPTY", "Cart is empty");
+        }
+
+        @GetMapping("/deadlock")
+        void deadlock() {
+            throw new CannotAcquireLockException("Deadlock found when trying to get lock");
         }
 
         @GetMapping("/forbidden")

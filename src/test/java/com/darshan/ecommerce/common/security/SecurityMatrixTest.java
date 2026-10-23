@@ -2,7 +2,11 @@ package com.darshan.ecommerce.common.security;
 
 import com.darshan.ecommerce.IntegrationTest;
 import com.darshan.ecommerce.IntegrationTestSupport.TestApi;
+import com.darshan.ecommerce.cart.CartItem;
+import com.darshan.ecommerce.cart.CartItemRepository;
+import com.darshan.ecommerce.product.Product;
 import com.darshan.ecommerce.user.AdminUserController;
+import com.darshan.ecommerce.user.UserRepository;
 import com.darshan.ecommerce.user.UserResponse;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -58,7 +62,14 @@ class SecurityMatrixTest {
     @Autowired
     private AdminUserController adminUserController;
 
+    @Autowired
+    private CartItemRepository cartItemRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
     private Long customerId;
+    private Long adminId;
     private String customerToken;
     private String adminToken;
     private Long categoryId;
@@ -70,24 +81,31 @@ class SecurityMatrixTest {
         api.cleanDatabase();
         categoryId = api.createCategory("Matrix").getId();
         customerId = api.registerCustomer("customer@matrix.example", PASSWORD);
-        api.createAdmin("admin@matrix.example", PASSWORD);
+        adminId = api.createAdmin("admin@matrix.example", PASSWORD);
         customerToken = api.login("customer@matrix.example", PASSWORD).accessToken();
         adminToken = api.login("admin@matrix.example", PASSWORD).accessToken();
     }
 
     // A fresh product and an empty category per invocation keep the DELETE and PUT cases independent.
+    // Both callers get the product in their cart, so the cart line endpoints have a line to act on.
     @BeforeEach
     void freshProductAndCategory() {
         int n = COUNTER.incrementAndGet();
-        productId = api.createProduct("MTX-" + n, 5).getId();
+        Product product = api.createProduct("MTX-" + n, 5);
+        productId = product.getId();
         emptyCategoryId = api.createCategory("Empty " + n).getId();
+        for (Long userId : List.of(customerId, adminId)) {
+            cartItemRepository.save(new CartItem(userRepository.getReferenceById(userId), product, 1));
+        }
     }
 
     static Stream<Arguments> matrix() {
         return Stream.of(
                 row(HttpMethod.GET, "/api/v1/me", 401, 200, 200),
                 row(HttpMethod.GET, "/api/v1/me/cart", 401, 200, 200),
-                row(HttpMethod.POST, "/api/v1/me/cart?productId={productId}&quantity=1", 401, 201, 201),
+                row(HttpMethod.POST, "/api/v1/me/cart/items", 401, 200, 200),
+                row(HttpMethod.PATCH, "/api/v1/me/cart/items/{productId}", 401, 200, 200),
+                row(HttpMethod.DELETE, "/api/v1/me/cart/items/{productId}", 401, 204, 204),
                 row(HttpMethod.DELETE, "/api/v1/me/cart", 401, 204, 204),
                 row(HttpMethod.GET, "/api/v1/me/orders", 401, 200, 200),
                 row(HttpMethod.GET, "/api/v1/admin/users", 401, 403, 200),
@@ -124,9 +142,8 @@ class SecurityMatrixTest {
                 .replace("{categoryId}", String.valueOf(categoryId))
                 .replace("{emptyCategoryId}", String.valueOf(emptyCategoryId));
         MockHttpServletRequestBuilder builder = request(method, path);
-        if (method == HttpMethod.POST || method == HttpMethod.PUT) {
-            Map<String, Object> body = path.contains("/categories") ? categoryBody() : productBody(method);
-            builder.contentType(MediaType.APPLICATION_JSON).content(api.json(body));
+        if (method == HttpMethod.POST || method == HttpMethod.PUT || method == HttpMethod.PATCH) {
+            builder.contentType(MediaType.APPLICATION_JSON).content(api.json(bodyFor(method, path)));
         }
         tokenFor(caller).ifPresent(token -> builder.header(HttpHeaders.AUTHORIZATION, "Bearer " + token));
 
@@ -193,6 +210,13 @@ class SecurityMatrixTest {
             case CUSTOMER -> Optional.of(customerToken);
             case ADMIN -> Optional.of(adminToken);
         };
+    }
+
+    private Map<String, Object> bodyFor(HttpMethod method, String path) {
+        if (path.startsWith("/api/v1/me/cart")) {
+            return method == HttpMethod.POST ? Map.of("productId", productId, "quantity", 1) : Map.of("quantity", 1);
+        }
+        return path.contains("/categories") ? categoryBody() : productBody(method);
     }
 
     private Map<String, Object> productBody(HttpMethod method) {

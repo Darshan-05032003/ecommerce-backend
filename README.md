@@ -68,6 +68,34 @@ GET /api/v1/products?categoryId=2&minPrice=1000&maxPrice=5000&q=key&inStock=true
 - Product list pages are not cached: each combination of filters, sort and page would be a separate entry with a low hit rate, and a single product change would make an unknown number of them stale.
 - The time to live bounds how long a change made outside these endpoints (for example directly in the database) can stay invisible.
 
+## Shopping Cart
+
+```
+GET    /api/v1/me/cart
+POST   /api/v1/me/cart/items               { "productId": 12, "quantity": 2 }
+PATCH  /api/v1/me/cart/items/{productId}   { "quantity": 3 }
+DELETE /api/v1/me/cart/items/{productId}   -> 204
+DELETE /api/v1/me/cart                     -> 204
+```
+
+```json
+{
+  "lines": [
+    { "productId": 12, "sku": "BK-JAVA-001", "name": "Effective Java", "unitPrice": 19.99, "quantity": 2, "lineTotal": 39.98 }
+  ],
+  "totalQuantity": 2,
+  "total": 39.98
+}
+```
+
+- `GET`, `POST` and `PATCH` return the whole cart. A cart holds one line per product, and lines are addressed by product id.
+- A line holds 1 to 10 units. A request quantity outside that range is a `400` validation error. Adding a product that is already in the cart increases that line's quantity; if the result would exceed 10 the request fails with `422` and the line is unchanged.
+- The product must exist (`404`) and be active, and the line quantity may not exceed the current stock. Both rules are business rule failures: `422` with an `errorCode` of `PRODUCT_UNAVAILABLE`, `INSUFFICIENT_STOCK` or `CART_LINE_LIMIT_EXCEEDED`. Adding to the cart does not reserve stock; stock is checked again and taken when the order is placed.
+- Lines are priced with the product's current price every time the cart is read, so a price change shows up in the cart until an order is placed. Line totals are rounded to two decimals with `HALF_EVEN`, and the cart total is the sum of the rounded lines.
+- Removing a product that is not in the cart still returns `204`, so a repeated delete is harmless.
+- Two simultaneous adds of the same product (a double click) end in one line with both quantities: the existing line is read with `SELECT ... FOR UPDATE`, and a request that loses the race to insert the first line is retried in a new transaction, where it merges into the line the other request created.
+- The cart is loaded with its products in one joined query whatever the number of lines. A test counts the statements with Hibernate statistics.
+
 ## Running Locally
 
 ```
@@ -95,7 +123,7 @@ Repository tests start a MySQL 8.4 container with Testcontainers and run the Fly
 
 ## Errors and Correlation IDs
 
-Every error response is an RFC 9457 problem detail (`application/problem+json`). Validation failures list the rejected fields; unexpected errors return a generic message and are logged with their stack trace on the server.
+Every error response is an RFC 9457 problem detail (`application/problem+json`). Validation failures list the rejected fields; business rule failures (`422`) carry a stable `errorCode` that clients can branch on; unexpected errors return a generic message and are logged with their stack trace on the server.
 
 ```json
 {
@@ -123,8 +151,10 @@ Each request gets a correlation id: the value of the `X-Correlation-Id` request 
 | `GET`  | `/api/v1/categories` | public | List categories (cached) |
 | `GET`  | `/api/v1/categories/{id}` | public | Get a category |
 | `GET`  | `/api/v1/me` | CUSTOMER, ADMIN | My profile |
-| `GET`  | `/api/v1/me/cart` | CUSTOMER, ADMIN | My cart |
-| `POST` | `/api/v1/me/cart?productId=&quantity=` | CUSTOMER, ADMIN | Add an item to my cart |
+| `GET`  | `/api/v1/me/cart` | CUSTOMER, ADMIN | My cart with line totals and the cart total |
+| `POST` | `/api/v1/me/cart/items` | CUSTOMER, ADMIN | Add a product, or increase its quantity if it is already in the cart |
+| `PATCH` | `/api/v1/me/cart/items/{productId}` | CUSTOMER, ADMIN | Set the quantity of a product in my cart |
+| `DELETE` | `/api/v1/me/cart/items/{productId}` | CUSTOMER, ADMIN | Remove a product from my cart |
 | `DELETE` | `/api/v1/me/cart` | CUSTOMER, ADMIN | Clear my cart |
 | `GET`  | `/api/v1/me/orders` | CUSTOMER, ADMIN | List my orders |
 | `POST` | `/api/v1/me/orders` | CUSTOMER, ADMIN | Place an order from my cart |
@@ -155,12 +185,13 @@ src/main/java/com/darshan/ecommerce/
 ├── user/        # user and role entities, profile (/me) and admin user endpoints
 ├── category/    # product categories
 ├── product/     # product entity, public catalogue and admin product endpoints
-├── cart/        # cart items and the /me/cart endpoints
+├── cart/        # cart lines, cart rules and totals, the /me/cart endpoints
 ├── order/       # orders, order items, /me/orders and the admin order view
 └── common/
     ├── config/      # typed settings, clock, JPA auditing, Redis caches, development seed data
     ├── exception/   # problem detail factory and global error handling
     ├── logging/     # masking helpers for log output
+    ├── money/       # scale and rounding for amounts
     ├── persistence/ # base entity and auditor lookup
     ├── security/    # filter chain, CORS, principal, 401/403 problem responses
     ├── validation/  # custom Bean Validation constraints

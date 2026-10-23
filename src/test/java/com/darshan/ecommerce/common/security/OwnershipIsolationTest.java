@@ -7,7 +7,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.Map;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -44,9 +47,10 @@ class OwnershipIsolationTest {
         adminToken = api.login("admin@example.com", PASSWORD).accessToken();
 
         Long productId = api.createProduct("ISO-1", 10).getId();
-        mockMvc.perform(post("/api/v1/me/cart").param("productId", String.valueOf(productId)).param("quantity", "2")
+        mockMvc.perform(post("/api/v1/me/cart/items").contentType(MediaType.APPLICATION_JSON)
+                        .content(api.json(Map.of("productId", productId, "quantity", 2)))
                         .header(HttpHeaders.AUTHORIZATION, bearer(aliceToken)))
-                .andExpect(status().isCreated());
+                .andExpect(status().isOk());
         mockMvc.perform(post("/api/v1/me/orders").header(HttpHeaders.AUTHORIZATION, bearer(aliceToken)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.userId").value(aliceId));
@@ -65,7 +69,7 @@ class OwnershipIsolationTest {
                 .andExpect(jsonPath("$.content", hasSize(0)));
         mockMvc.perform(get("/api/v1/me/cart").header(HttpHeaders.AUTHORIZATION, bearer(bobToken)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(0)));
+                .andExpect(jsonPath("$.lines", hasSize(0)));
         mockMvc.perform(get("/api/v1/me").header(HttpHeaders.AUTHORIZATION, bearer(bobToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("bob@example.com"));
