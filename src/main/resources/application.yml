@@ -24,6 +24,8 @@ app:
       issuer: ecommerce-backend
       access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:15m}
       refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:7d}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   rate-limit:
     login:
       attempts: 5

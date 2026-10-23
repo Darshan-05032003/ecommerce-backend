@@ -1,32 +1,30 @@
 package com.darshan.ecommerce.auth;
 
+import com.darshan.ecommerce.common.security.UserPrincipal;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 
+// Access tokens are HS256 JWTs signed with the configured secret. The parser is built once
+// (it is thread-safe) and reads "now" from the application Clock so expiry is testable.
 @Component
-public class JwtUtil {
-
-    private static final Logger log = LoggerFactory.getLogger(JwtUtil.class);
+public class JwtService {
 
     private final JwtProperties properties;
     private final Clock clock;
     private final SecretKey key;
     private final JwtParser parser;
 
-    public JwtUtil(JwtProperties properties, Clock clock) {
+    public JwtService(JwtProperties properties, Clock clock) {
         this.properties = properties;
         this.clock = clock;
         this.key = Keys.hmacShaKeyFor(properties.secret().getBytes(StandardCharsets.UTF_8));
@@ -37,12 +35,10 @@ public class JwtUtil {
                 .build();
     }
 
-    public String generateJwtToken(Authentication authentication) {
-        UserDetails userPrincipal = (UserDetails) authentication.getPrincipal();
+    public String issueAccessToken(UserPrincipal principal) {
         Instant now = clock.instant();
-
         return Jwts.builder()
-                .subject(userPrincipal.getUsername())
+                .subject(principal.getEmail())
                 .issuer(properties.issuer())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(properties.accessTokenTtl())))
@@ -50,17 +46,11 @@ public class JwtUtil {
                 .compact();
     }
 
-    public String getUserNameFromJwtToken(String token) {
+    public String subjectOf(String token) throws JwtException {
         return parser.parseSignedClaims(token).getPayload().getSubject();
     }
 
-    public boolean validateJwtToken(String authToken) {
-        try {
-            parser.parseSignedClaims(authToken);
-            return true;
-        } catch (JwtException e) {
-            log.debug("Rejected JWT: {}", e.getMessage());
-        }
-        return false;
+    public Duration accessTokenTtl() {
+        return properties.accessTokenTtl();
     }
 }

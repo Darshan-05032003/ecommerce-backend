@@ -15,13 +15,19 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Role extends BaseEntity {
 
-    public static final String CUSTOMER = "ROLE_CUSTOMER";
-    public static final String ADMIN = "ROLE_ADMIN";
+    // Stored with Spring Security's ROLE_ prefix so hasRole('ADMIN') matches without mapping.
+    private static final String PREFIX = "ROLE_";
+    public static final String CUSTOMER = PREFIX + "CUSTOMER";
+    public static final String ADMIN = PREFIX + "ADMIN";
 
     @Column(nullable = false, unique = true, length = 50)
     private String name;
 
     public Role(String name) {
         this.name = name;
+    }
+
+    public String shortName() {
+        return name.startsWith(PREFIX) ? name.substring(PREFIX.length()) : name;
     }
 }

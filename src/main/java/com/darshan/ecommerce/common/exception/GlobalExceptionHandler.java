@@ -1,6 +1,5 @@
 package com.darshan.ecommerce.common.exception;
 
-import com.darshan.ecommerce.common.web.CorrelationIdFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,7 +11,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import com.darshan.ecommerce.common.security.InvalidTokenException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -20,7 +21,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
-import java.time.Clock;
 import java.util.Comparator;
 import java.util.List;
 
@@ -35,10 +35,10 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    private final Clock clock;
+    private final ProblemDetailFactory problems;
 
-    public GlobalExceptionHandler(Clock clock) {
-        this.clock = clock;
+    public GlobalExceptionHandler(ProblemDetailFactory problems) {
+        this.problems = problems;
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
@@ -68,9 +68,29 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage());
     }
 
+    @ExceptionHandler(TooManyRequestsException.class)
+    ResponseEntity<ProblemDetail> handleTooManyRequests(TooManyRequestsException ex) {
+        long seconds = Math.max(1, (long) Math.ceil(ex.getRetryAfter().toNanos() / 1_000_000_000.0));
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
+                .body(problem(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage()));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
         return problem(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    // Unknown email and wrong password both arrive here as BadCredentialsException, so the
+    // response cannot be used to find out which addresses have an account.
+    @ExceptionHandler(BadCredentialsException.class)
+    ProblemDetail handleBadCredentials(BadCredentialsException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, "Invalid email or password");
+    }
+
+    @ExceptionHandler(InvalidTokenException.class)
+    ProblemDetail handleInvalidToken(InvalidTokenException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, ex.getMessage());
     }
 
     @ExceptionHandler(AuthenticationException.class)
@@ -107,18 +127,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     protected ResponseEntity<Object> createResponseEntity(Object body, HttpHeaders headers, HttpStatusCode statusCode,
                                                           WebRequest request) {
         if (body instanceof ProblemDetail problem) {
-            stamp(problem);
+            problems.stamp(problem);
         }
         return super.createResponseEntity(body, headers, statusCode, request);
     }
 
     private ProblemDetail problem(HttpStatus status, String detail) {
-        return stamp(ProblemDetail.forStatusAndDetail(status, detail));
-    }
-
-    private ProblemDetail stamp(ProblemDetail problem) {
-        problem.setProperty("correlationId", CorrelationIdFilter.current());
-        problem.setProperty("timestamp", clock.instant());
-        return problem;
+        return problems.create(status, detail);
     }
 }
