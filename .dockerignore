@@ -1,0 +1,6 @@
+# Allow-list: only what the image build needs reaches the build context.
+*
+!mvnw
+!.mvn/wrapper/maven-wrapper.properties
+!pom.xml
+!src/main/
