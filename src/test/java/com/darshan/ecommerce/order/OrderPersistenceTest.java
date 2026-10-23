@@ -17,8 +17,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.math.BigDecimal;
-import java.util.Set;
 
+import static com.darshan.ecommerce.order.OrderTestData.anOrder;
+import static com.darshan.ecommerce.product.ProductTestData.aProduct;
+import static com.darshan.ecommerce.user.UserTestData.aUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -50,16 +52,16 @@ class OrderPersistenceTest {
 
     @BeforeEach
     void setUp() {
-        user = userRepository.save(new User("buyer@example.com", "{noop}irrelevant", "Buyer", Set.of()));
+        user = userRepository.save(aUser().build());
         category = categoryRepository.save(new Category("Electronics", null));
-        laptop = productRepository.save(new Product("LAP-1", "Laptop", "Laptop", new BigDecimal("1000.00"), 5, category));
-        mouse = productRepository.save(new Product("MOU-1", "Mouse", "Mouse", new BigDecimal("20.00"), 5, category));
+        laptop = productRepository.save(aProduct().name("Laptop").price("1000.00").category(category).build());
+        mouse = productRepository.save(aProduct().name("Mouse").price("20.00").category(category).build());
         entityManager.flush();
     }
 
     @Test
     void cascadesPersistToOrderItems() {
-        Order order = newOrder("ORD-2026-000001");
+        Order order = newOrder();
 
         orderRepository.saveAndFlush(order);
 
@@ -69,7 +71,7 @@ class OrderPersistenceTest {
 
     @Test
     void deletesOrphanedItemsWhenRemovedFromTheOrder() {
-        Order order = orderRepository.saveAndFlush(newOrder("ORD-2026-000002"));
+        Order order = orderRepository.saveAndFlush(newOrder());
         entityManager.clear();
 
         Order reloaded = orderRepository.findById(order.getId()).orElseThrow();
@@ -81,7 +83,7 @@ class OrderPersistenceTest {
 
     @Test
     void deletesItemsTogetherWithTheOrder() {
-        Order order = orderRepository.saveAndFlush(newOrder("ORD-2026-000003"));
+        Order order = orderRepository.saveAndFlush(newOrder());
 
         orderRepository.delete(order);
         entityManager.flush();
@@ -91,7 +93,7 @@ class OrderPersistenceTest {
 
     @Test
     void incrementsVersionOnEveryUpdate() {
-        Order order = orderRepository.saveAndFlush(newOrder("ORD-2026-000004"));
+        Order order = orderRepository.saveAndFlush(newOrder());
         assertThat(order.getVersion()).isZero();
 
         order.changeStatus(OrderStatus.PAID);
@@ -102,7 +104,7 @@ class OrderPersistenceTest {
 
     @Test
     void storesTheLineTotalsAndTheirSumAsTheOrderTotal() {
-        Order order = orderRepository.saveAndFlush(newOrder("ORD-2026-000005"));
+        Order order = orderRepository.saveAndFlush(newOrder());
 
         BigDecimal total = jdbcTemplate.queryForObject(
                 "SELECT total_amount FROM orders WHERE id = ?", BigDecimal.class, order.getId());
@@ -113,7 +115,7 @@ class OrderPersistenceTest {
 
     @Test
     void rejectsAStatusOutsideTheLifecycle() {
-        Order order = orderRepository.saveAndFlush(newOrder("ORD-2026-000006"));
+        Order order = orderRepository.saveAndFlush(newOrder());
 
         assertThatThrownBy(() -> jdbcTemplate.update("UPDATE orders SET status = 'LOST' WHERE id = ?", order.getId()))
                 .isInstanceOf(DataAccessException.class)
@@ -122,8 +124,7 @@ class OrderPersistenceTest {
 
     @Test
     void rejectsUpdateBasedOnStaleVersion() {
-        Product saved = productRepository.saveAndFlush(
-                new Product("STALE-1", "Stale", "Stale", new BigDecimal("10.00"), 1, category));
+        Product saved = productRepository.saveAndFlush(aProduct().price("10.00").category(category).build());
         entityManager.clear();
 
         Product firstAdmin = productRepository.findById(saved.getId()).orElseThrow();
@@ -138,11 +139,8 @@ class OrderPersistenceTest {
                 .isInstanceOf(ObjectOptimisticLockingFailureException.class);
     }
 
-    private Order newOrder(String orderNumber) {
-        Order order = new Order(orderNumber, user, "1 Main Street, Pune");
-        order.addItem(new OrderItem(laptop, 1, laptop.getPrice()));
-        order.addItem(new OrderItem(mouse, 1, mouse.getPrice()));
-        return order;
+    private Order newOrder() {
+        return anOrder().user(user).line(laptop, 1).line(mouse, 1).build();
     }
 
     private int countItems(Order order) {
