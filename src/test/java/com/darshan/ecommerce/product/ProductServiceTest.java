@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.Collections;
@@ -33,12 +34,8 @@ public class ProductServiceTest {
 
     @BeforeEach
     void setUp() {
-        product = new Product();
-        product.setId(1L);
-        product.setName("Test Product");
-        product.setDescription("Test Description");
-        product.setPrice(new BigDecimal("10.00"));
-        product.setStockQuantity(100);
+        product = new Product("TEST-001", "Test Product", "Test Description", new BigDecimal("10.00"), 100);
+        ReflectionTestUtils.setField(product, "id", 1L);
     }
 
     @Test

@@ -1,7 +1,9 @@
 package com.darshan.ecommerce.product;
 
 import com.darshan.ecommerce.TestcontainersConfiguration;
+import com.darshan.ecommerce.user.Role;
 import com.darshan.ecommerce.user.RoleRepository;
+import com.darshan.ecommerce.user.User;
 import com.darshan.ecommerce.user.UserRepository;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -52,7 +54,10 @@ public class ProductControllerIntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        // Login to get token using the admin created by DataInitializer
+        Role adminRole = roleRepository.findByName(Role.ADMIN).orElseThrow();
+        userRepository.save(new User("admin@example.com", passwordEncoder.encode("admin123"),
+                "Admin User", Set.of(adminRole)));
+
         String loginJson = "{\"email\":\"admin@example.com\",\"password\":\"admin123\"}";
         MvcResult result = mockMvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -67,6 +72,7 @@ public class ProductControllerIntegrationTest {
     @Test
     void testCreateAndGetProduct() throws Exception {
         CreateProductRequestDTO req = new CreateProductRequestDTO();
+        req.setSku("IT-PROD-001");
         req.setName("Integration Test Product");
         req.setDescription("Desc");
         req.setPrice(new BigDecimal("99.99"));

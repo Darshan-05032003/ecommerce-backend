@@ -20,9 +20,10 @@ public class ProductService {
         this.productRepository = productRepository;
     }
 
-    public ProductResponseDTO create(Product product) {
-        Product saved = productRepository.save(product);
-        return mapToDTO(saved);
+    public ProductResponseDTO create(CreateProductRequestDTO request) {
+        Product product = new Product(request.getSku(), request.getName(), request.getDescription(),
+                request.getPrice(), request.getStockQuantity());
+        return mapToDTO(productRepository.save(product));
     }
 
     public ProductResponseDTO getById(Long id) {
@@ -40,15 +41,15 @@ public class ProductService {
                 .stream().map(this::mapToDTO).toList();
     }
 
-    public ProductResponseDTO update(Long id, Product updated) {
+    public ProductResponseDTO update(Long id, CreateProductRequestDTO request) {
         Product existing = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id " + id));
-        existing.setName(updated.getName());
-        existing.setDescription(updated.getDescription());
-        existing.setPrice(updated.getPrice());
-        existing.setStockQuantity(updated.getStockQuantity());
-        Product saved = productRepository.save(existing);
-        return mapToDTO(saved);
+        existing.setSku(request.getSku());
+        existing.setName(request.getName());
+        existing.setDescription(request.getDescription());
+        existing.setPrice(request.getPrice());
+        existing.setStockQuantity(request.getStockQuantity());
+        return mapToDTO(productRepository.save(existing));
     }
 
     public void delete(Long id) {
@@ -68,6 +69,7 @@ public class ProductService {
     private ProductResponseDTO mapToDTO(Product product) {
         ProductResponseDTO dto = new ProductResponseDTO();
         dto.setId(product.getId());
+        dto.setSku(product.getSku());
         dto.setName(product.getName());
         dto.setDescription(product.getDescription());
         dto.setPrice(product.getPrice());

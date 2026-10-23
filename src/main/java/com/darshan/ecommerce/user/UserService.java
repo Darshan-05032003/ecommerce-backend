@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -28,22 +30,20 @@ public class UserService {
             throw new ConflictException("Email already registered");
         }
         
-        Role customerRole = roleRepository.findByName("ROLE_CUSTOMER")
-                .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-                
-        User user = new User();
-        user.setEmail(request.getEmail());
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setFullName(request.getFullName());
-        user.setRoles(java.util.Set.of(customerRole));
-        
+        Role customerRole = roleRepository.findByName(Role.CUSTOMER)
+                .orElseThrow(() -> new IllegalStateException("Role " + Role.CUSTOMER + " is not seeded"));
+
+        User user = new User(request.getEmail(), passwordEncoder.encode(request.getPassword()),
+                request.getFullName(), Set.of(customerRole));
         return mapToDTO(userRepository.save(user));
     }
 
     public UserResponseDTO getById(Long id) {
-        return mapToDTO(getEntityById(id));
+        return userRepository.findWithRolesById(id)
+                .map(this::mapToDTO)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + id));
     }
-    
+
     public User getEntityById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + id));
@@ -59,9 +59,7 @@ public class UserService {
         dto.setEmail(user.getEmail());
         dto.setFullName(user.getFullName());
         dto.setCreatedAt(user.getCreatedAt());
-        if (user.getRoles() != null) {
-            dto.setRoles(user.getRoles().stream().map(Role::getName).collect(java.util.stream.Collectors.toSet()));
-        }
+        dto.setRoles(user.getRoles().stream().map(Role::getName).collect(Collectors.toSet()));
         return dto;
     }
 }
