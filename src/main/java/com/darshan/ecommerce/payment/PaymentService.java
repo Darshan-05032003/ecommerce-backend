@@ -8,6 +8,7 @@ import com.darshan.ecommerce.order.OrderService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,13 +25,16 @@ public class PaymentService {
     private final PaymentProcessorRegistry processors;
     private final PaymentAttemptLog attemptLog;
     private final PaymentRepository paymentRepository;
+    private final ApplicationEventPublisher events;
 
     public PaymentService(OrderService orderService, PaymentProcessorRegistry processors,
-                          PaymentAttemptLog attemptLog, PaymentRepository paymentRepository) {
+                          PaymentAttemptLog attemptLog, PaymentRepository paymentRepository,
+                          ApplicationEventPublisher events) {
         this.orderService = orderService;
         this.processors = processors;
         this.attemptLog = attemptLog;
         this.paymentRepository = paymentRepository;
+        this.events = events;
     }
 
     // The attempt row is written by PaymentAttemptLog in its own transactions, so it is kept
@@ -86,6 +90,8 @@ public class PaymentService {
         Payment payment = paymentRepository.findForUpdateById(paymentId).orElseThrow();
         payment.succeed(reference);
         orderService.markPaid(order, "Paid by " + payment.getMethod());
+        events.publishEvent(new OrderPaidEvent(order.getId(), order.getOrderNumber(), order.getUser().getEmail(),
+                payment.getAmount(), payment.getMethod()));
         log.info("Payment {} for order {} succeeded", paymentId, order.getId());
         return PaymentResponse.from(payment, order.getId());
     }

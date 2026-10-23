@@ -11,6 +11,7 @@ import com.darshan.ecommerce.user.UserRepository;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -40,6 +41,7 @@ public class OrderService {
     private final AuditorAware<String> auditor;
     private final Clock clock;
     private final EntityManager entityManager;
+    private final ApplicationEventPublisher events;
 
     public OrderService(OrderRepository orderRepository,
                         OrderStatusHistoryRepository historyRepository,
@@ -49,7 +51,8 @@ public class OrderService {
                         PaymentRefunds paymentRefunds,
                         AuditorAware<String> auditor,
                         Clock clock,
-                        EntityManager entityManager) {
+                        EntityManager entityManager,
+                        ApplicationEventPublisher events) {
         this.orderRepository = orderRepository;
         this.historyRepository = historyRepository;
         this.cartItemRepository = cartItemRepository;
@@ -59,6 +62,7 @@ public class OrderService {
         this.auditor = auditor;
         this.clock = clock;
         this.entityManager = entityManager;
+        this.events = events;
     }
 
     // Runs inside the placement transaction opened by OrderPlacementService (MANDATORY): every line
@@ -84,6 +88,8 @@ public class OrderService {
         Order saved = orderRepository.save(order);
         recordStatus(saved, null, "Order placed");
         cartItemRepository.deleteAllByIdInBatch(cartItems.stream().map(CartItem::getId).toList());
+        events.publishEvent(new OrderPlacedEvent(saved.getId(), saved.getOrderNumber(), saved.getUser().getEmail(),
+                saved.getTotalAmount()));
         return OrderResponse.from(saved);
     }
 
@@ -164,9 +170,9 @@ public class OrderService {
             order.getItems().stream()
                     .sorted(Comparator.comparing(item -> item.getProduct().getId()))
                     .forEach(item -> productService.releaseStock(item.getProduct().getId(), item.getQuantity()));
-            if (previous == OrderStatus.PAID) {
-                paymentRefunds.refundFor(order.getId());
-            }
+            boolean refunded = previous == OrderStatus.PAID && paymentRefunds.refundFor(order.getId());
+            events.publishEvent(new OrderCancelledEvent(order.getId(), order.getOrderNumber(),
+                    order.getUser().getEmail(), order.getTotalAmount(), refunded));
         }
         recordStatus(order, previous, reason);
     }
