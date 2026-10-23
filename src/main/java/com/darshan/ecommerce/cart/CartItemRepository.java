@@ -1,7 +1,5 @@
 package com.darshan.ecommerce.cart;
 
-import com.darshan.ecommerce.user.User;
-
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -13,8 +11,6 @@ import java.util.List;
 import java.util.Optional;
 
 public interface CartItemRepository extends JpaRepository<CartItem, Long> {
-
-    List<CartItem> findByUser(User user);
 
     // Every line is shown with its product's sku, name and price, so the product is joined into
     // the same SELECT instead of being loaded lazily once per line.
@@ -39,6 +35,4 @@ public interface CartItemRepository extends JpaRepository<CartItem, Long> {
     @Modifying
     @Query("delete from CartItem ci where ci.user.id = :userId")
     int deleteAllForUser(@Param("userId") Long userId);
-
-    void deleteByUser(User user);
 }

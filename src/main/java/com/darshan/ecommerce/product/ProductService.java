@@ -3,8 +3,8 @@ package com.darshan.ecommerce.product;
 import com.darshan.ecommerce.category.Category;
 import com.darshan.ecommerce.category.CategoryRepository;
 import com.darshan.ecommerce.common.config.CacheNames;
+import com.darshan.ecommerce.common.exception.BusinessRuleViolationException;
 import com.darshan.ecommerce.common.exception.ConflictException;
-import com.darshan.ecommerce.common.exception.InsufficientStockException;
 import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
 import com.darshan.ecommerce.common.web.PageResponse;
 
@@ -16,11 +16,15 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Transactional(readOnly = true)
 public class ProductService {
+
+    public static final String OUT_OF_STOCK = "OUT_OF_STOCK";
+    public static final String PRODUCT_UNAVAILABLE = "PRODUCT_UNAVAILABLE";
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
@@ -96,15 +100,34 @@ public class ProductService {
         load(id).setActive(false);
     }
 
-    @Transactional
+    // MANDATORY: reserving stock only makes sense as part of a larger unit (placing an order) that
+    // must roll the decrement back if anything after it fails. Called without a transaction this
+    // fails fast instead of committing the decrement on its own. The cache is transaction aware, so
+    // the eviction happens after commit and not at all on rollback.
+    @Transactional(propagation = Propagation.MANDATORY)
     @CacheEvict(cacheNames = CacheNames.PRODUCTS, key = "#productId")
-    public void decreaseStock(Long productId, int quantity) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> notFound(productId));
-        if (product.getStockQuantity() < quantity) {
-            throw new InsufficientStockException("Insufficient stock for product " + productId);
+    public void reserveStock(Long productId, int quantity) {
+        if (productRepository.decreaseStockIfAvailable(productId, quantity) == 0) {
+            throw reservationFailure(productId);
         }
-        product.setStockQuantity(product.getStockQuantity() - quantity);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    @CacheEvict(cacheNames = CacheNames.PRODUCTS, key = "#productId")
+    public void releaseStock(Long productId, int quantity) {
+        if (productRepository.increaseStock(productId, quantity) == 0) {
+            throw notFound(productId);
+        }
+    }
+
+    // Zero updated rows has three possible causes; the extra query runs only on this failure path.
+    private BusinessRuleViolationException reservationFailure(Long productId) {
+        boolean active = productRepository.findActiveFlagById(productId).orElseThrow(() -> notFound(productId));
+        if (!active) {
+            return new BusinessRuleViolationException(PRODUCT_UNAVAILABLE,
+                    "Product " + productId + " is no longer available");
+        }
+        return new BusinessRuleViolationException(OUT_OF_STOCK, "Not enough stock left for product " + productId);
     }
 
     private PageResponse<ProductResponse> page(Specification<Product> specification, Pageable pageable) {

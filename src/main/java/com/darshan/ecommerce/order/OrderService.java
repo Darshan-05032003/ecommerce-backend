@@ -4,6 +4,7 @@ import com.darshan.ecommerce.cart.CartItem;
 import com.darshan.ecommerce.cart.CartItemRepository;
 import com.darshan.ecommerce.common.exception.BusinessRuleViolationException;
 import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
+import com.darshan.ecommerce.common.money.Money;
 import com.darshan.ecommerce.product.ProductService;
 import com.darshan.ecommerce.user.User;
 import com.darshan.ecommerce.user.UserRepository;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -45,16 +47,19 @@ public class OrderService {
 
     public OrderResponseDTO placeOrder(Long userId) {
         User user = getUser(userId);
-        List<CartItem> cartItems = cartItemRepository.findByUser(user);
+        // Products are joined into the cart query, and the lines are reserved in product id order so
+        // two orders touching the same products lock the rows in the same order and cannot deadlock.
+        List<CartItem> cartItems = cartItemRepository.findCartWithProducts(userId).stream()
+                .sorted(Comparator.comparing(item -> item.getProduct().getId()))
+                .toList();
         if (cartItems.isEmpty()) {
             throw new BusinessRuleViolationException("CART_EMPTY", "Cart is empty");
         }
 
-        BigDecimal total = BigDecimal.ZERO;
+        BigDecimal total = Money.ZERO;
         for (CartItem cartItem : cartItems) {
-            productService.decreaseStock(cartItem.getProduct().getId(), cartItem.getQuantity());
-            total = total.add(cartItem.getProduct().getPrice()
-                    .multiply(BigDecimal.valueOf(cartItem.getQuantity())));
+            productService.reserveStock(cartItem.getProduct().getId(), cartItem.getQuantity());
+            total = total.add(Money.times(cartItem.getProduct().getPrice(), cartItem.getQuantity()));
         }
 
         Order order = new Order(orderNumberGenerator.next(), user, total);
@@ -64,7 +69,7 @@ public class OrderService {
         }
 
         Order saved = orderRepository.save(order);
-        cartItemRepository.deleteByUser(user);
+        cartItemRepository.deleteAllByIdInBatch(cartItems.stream().map(CartItem::getId).toList());
         return mapToDTO(saved);
     }
 

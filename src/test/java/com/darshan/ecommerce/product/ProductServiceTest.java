@@ -3,7 +3,7 @@ package com.darshan.ecommerce.product;
 import com.darshan.ecommerce.category.Category;
 import com.darshan.ecommerce.category.CategoryRepository;
 import com.darshan.ecommerce.common.exception.ConflictException;
-import com.darshan.ecommerce.common.exception.InsufficientStockException;
+import com.darshan.ecommerce.common.exception.BusinessRuleViolationException;
 import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -146,12 +146,47 @@ class ProductServiceTest {
     }
 
     @Test
-    void decreaseStockRejectsMoreThanAvailable() {
-        when(productRepository.findById(10L)).thenReturn(Optional.of(product));
+    void reserveStockSucceedsWhenTheConditionalUpdateChangedTheRow() {
+        when(productRepository.decreaseStockIfAvailable(10L, 3)).thenReturn(1);
 
-        assertThatThrownBy(() -> productService.decreaseStock(10L, 41))
-                .isInstanceOf(InsufficientStockException.class);
-        assertThat(product.getStockQuantity()).isEqualTo(40);
+        productService.reserveStock(10L, 3);
+
+        verify(productRepository, never()).findActiveFlagById(any());
+    }
+
+    @Test
+    void reserveStockReportsOutOfStockForAnActiveProduct() {
+        when(productRepository.decreaseStockIfAvailable(10L, 41)).thenReturn(0);
+        when(productRepository.findActiveFlagById(10L)).thenReturn(Optional.of(true));
+
+        assertThatThrownBy(() -> productService.reserveStock(10L, 41))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .extracting("errorCode").isEqualTo(ProductService.OUT_OF_STOCK);
+    }
+
+    @Test
+    void reserveStockReportsAWithdrawnProductAsUnavailable() {
+        when(productRepository.decreaseStockIfAvailable(10L, 1)).thenReturn(0);
+        when(productRepository.findActiveFlagById(10L)).thenReturn(Optional.of(false));
+
+        assertThatThrownBy(() -> productService.reserveStock(10L, 1))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .extracting("errorCode").isEqualTo(ProductService.PRODUCT_UNAVAILABLE);
+    }
+
+    @Test
+    void reserveStockReportsAnUnknownProductAsNotFound() {
+        when(productRepository.decreaseStockIfAvailable(99L, 1)).thenReturn(0);
+        when(productRepository.findActiveFlagById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> productService.reserveStock(99L, 1)).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void releaseStockRejectsAnUnknownProduct() {
+        when(productRepository.increaseStock(99L, 2)).thenReturn(0);
+
+        assertThatThrownBy(() -> productService.releaseStock(99L, 2)).isInstanceOf(ResourceNotFoundException.class);
     }
 
     private static Category category(Long id, String name) {
