@@ -8,7 +8,7 @@ COPY .mvn .mvn
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q dependency:go-offline
 
 COPY src/main src/main
-# Tests need Docker for Testcontainers and run in CI before the image is built.
+# Tests need Docker for Testcontainers, so CI runs them in a separate job.
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q package -DskipTests \
     && cp target/ecommerce-backend-*.jar app.jar \
     && java -Djarmode=tools -jar app.jar extract --layers --launcher --destination extracted
