@@ -1,6 +1,10 @@
 package com.darshan.ecommerce.category;
 
+import com.darshan.ecommerce.common.openapi.ApiErrorResponses;
+import com.darshan.ecommerce.common.openapi.ApiTags;
+
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +22,7 @@ import java.net.URI;
 @RestController
 @RequestMapping("/api/v1/admin/categories")
 @PreAuthorize("hasRole('ADMIN')")
-@Tag(name = "Admin: categories", description = "Category administration")
+@Tag(name = ApiTags.ADMIN)
 public class AdminCategoryController {
 
     private final CategoryService categoryService;
@@ -29,6 +33,8 @@ public class AdminCategoryController {
 
     @PostMapping
     @Operation(summary = "Create a category")
+    @ApiResponse(responseCode = "201", description = "Category created")
+    @ApiResponse(responseCode = "409", ref = ApiErrorResponses.CONFLICT)
     public ResponseEntity<CategoryResponse> create(@RequestBody @Valid CategoryRequest request) {
         CategoryResponse created = categoryService.create(request);
         return ResponseEntity.created(URI.create("/api/v1/categories/" + created.id())).body(created);
@@ -36,12 +42,18 @@ public class AdminCategoryController {
 
     @PutMapping("/{id}")
     @Operation(summary = "Update a category")
+    @ApiResponse(responseCode = "200", description = "Category updated")
+    @ApiResponse(responseCode = "404", ref = ApiErrorResponses.NOT_FOUND)
+    @ApiResponse(responseCode = "409", ref = ApiErrorResponses.CONFLICT)
     public CategoryResponse update(@PathVariable Long id, @RequestBody @Valid CategoryRequest request) {
         return categoryService.update(id, request);
     }
 
     @DeleteMapping("/{id}")
     @Operation(summary = "Delete a category that has no products")
+    @ApiResponse(responseCode = "204", description = "Category deleted")
+    @ApiResponse(responseCode = "404", ref = ApiErrorResponses.NOT_FOUND)
+    @ApiResponse(responseCode = "409", ref = ApiErrorResponses.CONFLICT)
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         categoryService.delete(id);
         return ResponseEntity.noContent().build();

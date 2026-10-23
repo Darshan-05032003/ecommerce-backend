@@ -1,11 +1,17 @@
 package com.darshan.ecommerce.order;
 
+import com.darshan.ecommerce.common.openapi.ApiErrorResponses;
+import com.darshan.ecommerce.common.openapi.ApiTags;
 import com.darshan.ecommerce.common.security.UserPrincipal;
 import com.darshan.ecommerce.common.web.PageParams;
 import com.darshan.ecommerce.common.web.PageResponse;
 import com.darshan.ecommerce.common.web.SortWhitelist;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
@@ -24,7 +30,7 @@ import java.net.URI;
 
 @RestController
 @RequestMapping("/api/v1/me/orders")
-@Tag(name = "Orders", description = "The authenticated user's orders")
+@Tag(name = ApiTags.ORDERS)
 public class OrderController {
 
     static final SortWhitelist SORT = SortWhitelist.of(Sort.Direction.DESC, "createdAt", "totalAmount");
@@ -48,6 +54,8 @@ public class OrderController {
 
     @GetMapping("/{id}")
     @Operation(summary = "Get one of my orders with its status history")
+    @ApiResponse(responseCode = "200", description = "The order with its lines and status history")
+    @ApiResponse(responseCode = "404", ref = ApiErrorResponses.NOT_FOUND)
     public OrderDetailResponse get(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
         return orderService.getForUser(principal.getId(), id);
     }
@@ -56,7 +64,15 @@ public class OrderController {
     // with an error code as a malformed one, instead of Spring's generic missing-header response.
     @PostMapping
     @Operation(summary = "Place an order from my cart; requires an Idempotency-Key header")
+    @ApiResponse(responseCode = "201", description = "Order created, or the stored response of an earlier request "
+            + "with the same key", headers = @Header(name = IDEMPOTENT_REPLAYED,
+            description = "true when the response is a replay and nothing new was placed",
+            schema = @Schema(type = "boolean")))
+    @ApiResponse(responseCode = "422", ref = ApiErrorResponses.UNPROCESSABLE)
     public ResponseEntity<OrderResponse> placeOrder(@AuthenticationPrincipal UserPrincipal principal,
+                                                    @Parameter(required = true, example = "8f14e45f-ceea-467f-a8f4-2b2b1a7c4c55",
+                                                            description = "Client-generated key, 1 to 100 letters, digits or . _ : -; "
+                                                                    + "a retry with the same key and body returns the original order")
                                                     @RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key,
                                                     @Valid @RequestBody PlaceOrderRequest request) {
         return switch (placementService.place(principal.getId(), key, request)) {
@@ -70,6 +86,9 @@ public class OrderController {
 
     @PostMapping("/{id}/cancel")
     @Operation(summary = "Cancel one of my orders that has not shipped yet; the stock is returned")
+    @ApiResponse(responseCode = "200", description = "The cancelled order; a paid order was refunded")
+    @ApiResponse(responseCode = "404", ref = ApiErrorResponses.NOT_FOUND)
+    @ApiResponse(responseCode = "409", ref = ApiErrorResponses.CONFLICT)
     public OrderDetailResponse cancel(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
         return orderService.cancelForUser(principal.getId(), id);
     }

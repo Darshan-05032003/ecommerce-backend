@@ -1,6 +1,10 @@
 package com.darshan.ecommerce.user;
 
+import com.darshan.ecommerce.common.openapi.ApiErrorResponses;
+import com.darshan.ecommerce.common.openapi.ApiTags;
+
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,7 +17,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/admin/users")
 @PreAuthorize("hasRole('ADMIN')")
-@Tag(name = "Admin: users", description = "User administration")
+@Tag(name = ApiTags.ADMIN)
 public class AdminUserController {
 
     private final UserService userService;
@@ -30,6 +34,8 @@ public class AdminUserController {
 
     @GetMapping("/{id}")
     @Operation(summary = "Get any user by id")
+    @ApiResponse(responseCode = "200", description = "The user")
+    @ApiResponse(responseCode = "404", ref = ApiErrorResponses.NOT_FOUND)
     public UserResponse getById(@PathVariable Long id) {
         return userService.getById(id);
     }

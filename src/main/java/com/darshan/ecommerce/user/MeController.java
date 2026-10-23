@@ -1,5 +1,6 @@
 package com.darshan.ecommerce.user;
 
+import com.darshan.ecommerce.common.openapi.ApiTags;
 import com.darshan.ecommerce.common.security.UserPrincipal;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -11,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/me")
-@Tag(name = "Me", description = "The authenticated user's own resources")
+@Tag(name = ApiTags.AUTH)
 public class MeController {
 
     private final UserService userService;
@@ -21,7 +22,7 @@ public class MeController {
     }
 
     @GetMapping
-    @Operation(summary = "Get my profile")
+    @Operation(summary = "Get the profile of the authenticated user")
     public UserResponse profile(@AuthenticationPrincipal UserPrincipal principal) {
         return userService.getById(principal.getId());
     }

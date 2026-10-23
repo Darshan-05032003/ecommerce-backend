@@ -52,6 +52,9 @@ management:
     tags:
       application: ${spring.application.name}
 
+springdoc:
+  default-produces-media-type: application/json
+
 logging:
   pattern:
     correlation: "[%X{correlationId:-}] "
