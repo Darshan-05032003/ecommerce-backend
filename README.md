@@ -16,7 +16,7 @@ A REST API for a small online shop built with Spring Boot and MySQL. It models u
 | Validation   | Bean Validation (Jakarta)                    |
 | API docs     | springdoc-openapi (Swagger UI)               |
 | Observability | Spring Boot Actuator, Micrometer, Prometheus format, ECS JSON logs |
-| Testing      | JUnit 5, Mockito, AssertJ, Testcontainers    |
+| Testing      | JUnit 6, Mockito, AssertJ, Awaitility, Testcontainers, JaCoCo |
 | Build        | Maven (wrapper included), GitHub Actions     |
 
 ## Configuration
@@ -169,7 +169,29 @@ Every entity extends `BaseEntity`, which carries the id, `createdAt`, `updatedAt
 ./mvnw clean verify
 ```
 
-Repository tests start a MySQL 8.4 container with Testcontainers and run the Flyway migrations against it; full integration tests also start a Redis 7 container for the caches. Docker must be running. The same command runs in GitHub Actions on every push to `master` and on every pull request.
+Docker must be running: the tests use a MySQL 8.4 and a Redis 7 container started by Testcontainers. The same command runs in GitHub Actions on every push to `master` and on every pull request.
+
+### Tests
+
+The suite has 587 tests, organised by the layer they exercise:
+
+| Layer | Tools | What it covers |
+|-------|-------|----------------|
+| Unit | JUnit, Mockito, AssertJ | Order state machine, money rounding, cart rules, payment processors, and the order and payment services with mocked collaborators (stock locked in product id order, retries after concurrency failures, failed attempts recorded) |
+| Web slice | `@WebMvcTest` | Request validation, status codes, `Location` and `Idempotent-Replayed` headers, problem detail bodies, error responses that leak no internal data |
+| Repository slice | `@DataJpaTest` on MySQL | Constraints and indexes, optimistic locking, ownership and status queries, the one-live-payment index, statement counts |
+| Integration | `@SpringBootTest` with MockMvc, MySQL and Redis | Security matrix and ownership, 20 concurrent buyers for 5 units, idempotent order placement, payments and refunds, caching, emails after commit, Actuator and metrics |
+| End to end | `CheckoutFlowIntegrationTest` | Register, log in, browse and filter, add to cart, place an order with an `Idempotency-Key` and retry it, pay by card, ship and deliver; then the status history, stock, payment row, metrics and emails are checked |
+
+- One MySQL and one Redis container are started per test run and shared by every Spring test context. Repository tests empty the tables before each test because integration tests commit their data.
+- Tests never sleep: asynchronous emails are awaited with Awaitility, concurrency tests use a start latch and futures with timeouts, and time-dependent code reads a `Clock` that tests move forward.
+- Test data builders (`ProductTestData`, `UserTestData`, `OrderTestData`) give every entity valid defaults, so a test only sets the fields it is about.
+
+### Coverage
+
+JaCoCo runs during `verify` and writes its report to `target/site/jacoco/index.html`; CI uploads it as the `jacoco-report` artifact. Records that only carry data (`*Request`, `*Response`), configuration classes (`*Config`, `*Properties`), the main class and the generated MapStruct mappers are excluded.
+
+On the last full run, coverage was 99.2% of lines (1136 of 1145) and 94.5% of branches (242 of 256). The build fails if line coverage drops below 95%.
 
 ## Errors and Correlation IDs
 
