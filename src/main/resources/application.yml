@@ -26,6 +26,32 @@ spring:
 server:
   port: ${SERVER_PORT:8081}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      roles: ADMIN
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState, db, redis
+  health:
+    # Order emails are sent asynchronously after commit; a mail server outage must not take the
+    # application out of the load balancer.
+    mail:
+      enabled: false
+  info:
+    git:
+      mode: simple
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
 logging:
   pattern:
     correlation: "[%X{correlationId:-}] "
