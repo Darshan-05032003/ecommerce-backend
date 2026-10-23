@@ -133,6 +133,7 @@ class SecurityMatrixTest {
                 row(HttpMethod.POST, "/api/v1/me/orders", 401, 201, 201),
                 row(HttpMethod.GET, "/api/v1/me/orders/{myOrderId}", 401, 200, 200),
                 row(HttpMethod.POST, "/api/v1/me/orders/{myOrderId}/cancel", 401, 200, 200),
+                row(HttpMethod.POST, "/api/v1/me/orders/{myOrderId}/payments", 401, 201, 201),
                 row(HttpMethod.GET, "/api/v1/admin/orders", 401, 403, 200),
                 row(HttpMethod.GET, "/api/v1/admin/orders/{customerOrderId}", 401, 403, 200),
                 row(HttpMethod.PATCH, "/api/v1/admin/orders/{customerOrderId}/status", 401, 403, 200),
@@ -246,6 +247,9 @@ class SecurityMatrixTest {
     }
 
     private Map<String, Object> bodyFor(HttpMethod method, String path) {
+        if (path.endsWith("/payments")) {
+            return Map.of("method", "COD");
+        }
         if (path.startsWith("/api/v1/me/orders")) {
             return Map.of("shippingAddress", "Matrix street");
         }

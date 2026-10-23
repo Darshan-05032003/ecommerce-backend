@@ -83,6 +83,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return body;
     }
 
+    @ExceptionHandler(UpstreamServiceException.class)
+    ProblemDetail handleUpstream(UpstreamServiceException ex) {
+        ProblemDetail body = problem(ex.getStatus(), ex.getMessage());
+        body.setProperty("errorCode", ex.getErrorCode());
+        return body;
+    }
+
     @ExceptionHandler(InvalidRequestException.class)
     ProblemDetail handleInvalidRequest(InvalidRequestException ex) {
         ProblemDetail body = problem(HttpStatus.BAD_REQUEST, ex.getMessage());

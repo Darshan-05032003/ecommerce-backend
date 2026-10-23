@@ -15,6 +15,13 @@ spring:
       port: ${REDIS_PORT:6380}
   cache:
     type: redis
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    properties:
+      "[mail.smtp.connectiontimeout]": 5000
+      "[mail.smtp.timeout]": 5000
+      "[mail.smtp.writetimeout]": 5000
 
 server:
   port: ${SERVER_PORT:8081}
@@ -36,6 +43,17 @@ app:
     login:
       attempts: 5
       window: 1m
+  async:
+    core-size: ${ASYNC_CORE_SIZE:2}
+    max-size: ${ASYNC_MAX_SIZE:4}
+    queue-capacity: ${ASYNC_QUEUE_CAPACITY:100}
+    thread-name-prefix: async-
+    rejection-policy: ${ASYNC_REJECTION_POLICY:CALLER_RUNS}
+    shutdown-timeout: 30s
+  notifications:
+    from: ${MAIL_FROM:orders@ecommerce.local}
+  payments:
+    gateway: ${PAYMENT_GATEWAY:simulated}
   orders:
     idempotency-key-retention: ${ORDER_IDEMPOTENCY_KEY_RETENTION:24h}
     idempotency-cleanup-cron: ${ORDER_IDEMPOTENCY_CLEANUP_CRON:0 15 * * * *}
