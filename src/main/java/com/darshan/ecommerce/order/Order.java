@@ -1,5 +1,6 @@
 package com.darshan.ecommerce.order;
 
+import com.darshan.ecommerce.common.money.Money;
 import com.darshan.ecommerce.common.persistence.BaseEntity;
 import com.darshan.ecommerce.user.User;
 
@@ -17,7 +18,6 @@ import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -40,22 +40,25 @@ public class Order extends BaseEntity {
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();
 
+    // Always the sum of the rounded line totals, maintained by addItem and removeItem.
     @Column(nullable = false, precision = 10, scale = 2)
-    private BigDecimal totalAmount;
+    private BigDecimal totalAmount = Money.ZERO;
+
+    @Column(nullable = false, length = 255)
+    private String shippingAddress;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
-    @Setter
     private OrderStatus status;
 
     @Version
     @Column(nullable = false)
     private Integer version;
 
-    public Order(String orderNumber, User user, BigDecimal totalAmount) {
+    public Order(String orderNumber, User user, String shippingAddress) {
         this.orderNumber = orderNumber;
         this.user = user;
-        this.totalAmount = totalAmount;
+        this.shippingAddress = shippingAddress;
         this.status = OrderStatus.CREATED;
     }
 
@@ -66,17 +69,21 @@ public class Order extends BaseEntity {
     public void addItem(OrderItem item) {
         items.add(item);
         item.setOrder(this);
+        totalAmount = totalAmount.add(item.getLineTotal());
     }
 
     public void removeItem(OrderItem item) {
-        items.remove(item);
-        item.setOrder(null);
+        if (items.remove(item)) {
+            item.setOrder(null);
+            totalAmount = totalAmount.subtract(item.getLineTotal());
+        }
     }
 
-    public enum OrderStatus {
-        CREATED,
-        PAID,
-        SHIPPED,
-        CANCELLED
+    // Returns the previous status so the caller can record the change. The @Version column makes
+    // two concurrent changes of the same order fail instead of both being applied.
+    OrderStatus changeStatus(OrderStatus target) {
+        OrderStatus previous = status;
+        status = status.moveTo(target);
+        return previous;
     }
 }

@@ -1,5 +1,6 @@
 package com.darshan.ecommerce.order;
 
+import com.darshan.ecommerce.common.money.Money;
 import com.darshan.ecommerce.common.persistence.BaseEntity;
 import com.darshan.ecommerce.product.Product;
 
@@ -16,6 +17,8 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 
+// The unit price and the line total are copied when the order is placed, so later catalogue
+// price changes never alter what the customer was charged.
 @Entity
 @Table(name = "order_items")
 @Getter
@@ -34,12 +37,16 @@ public class OrderItem extends BaseEntity {
     @Column(nullable = false)
     private Integer quantity;
 
-    @Column(nullable = false, precision = 10, scale = 2)
-    private BigDecimal price;
+    @Column(name = "price", nullable = false, precision = 10, scale = 2)
+    private BigDecimal unitPrice;
 
-    public OrderItem(Product product, Integer quantity, BigDecimal price) {
+    @Column(nullable = false, precision = 10, scale = 2)
+    private BigDecimal lineTotal;
+
+    public OrderItem(Product product, int quantity, BigDecimal unitPrice) {
         this.product = product;
         this.quantity = quantity;
-        this.price = price;
+        this.unitPrice = Money.of(unitPrice);
+        this.lineTotal = Money.times(unitPrice, quantity);
     }
 }

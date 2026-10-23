@@ -73,7 +73,7 @@ public class IntegrationTestSupport {
         // The Redis caches are shared by every test in the context, so they are emptied as well.
         public void cleanDatabase() {
             jdbcTemplate.update("UPDATE refresh_tokens SET replaced_by = NULL");
-            for (String table : List.of("refresh_tokens", "order_items", "orders", "cart_items", "user_roles",
+            for (String table : List.of("refresh_tokens", "order_status_history", "order_items", "orders", "cart_items", "user_roles",
                     "users", "products", "categories")) {
                 jdbcTemplate.update("DELETE FROM " + table);
             }
@@ -81,7 +81,8 @@ public class IntegrationTestSupport {
         }
 
         public void cleanCatalogue() {
-            for (String table : List.of("order_items", "orders", "cart_items", "products", "categories")) {
+            for (String table : List.of("order_status_history", "order_items", "orders", "cart_items", "products",
+                    "categories")) {
                 jdbcTemplate.update("DELETE FROM " + table);
             }
             clearCaches();

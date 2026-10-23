@@ -24,7 +24,7 @@ public class AdminOrderController {
 
     @GetMapping
     @Operation(summary = "List the orders of any user")
-    public Page<OrderResponseDTO> listOrders(@PathVariable Long userId, Pageable pageable) {
+    public Page<OrderResponse> listOrders(@PathVariable Long userId, Pageable pageable) {
         return orderService.listOrdersForUser(userId, pageable);
     }
 }

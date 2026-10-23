@@ -51,7 +51,9 @@ class OwnershipIsolationTest {
                         .content(api.json(Map.of("productId", productId, "quantity", 2)))
                         .header(HttpHeaders.AUTHORIZATION, bearer(aliceToken)))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/v1/me/orders").header(HttpHeaders.AUTHORIZATION, bearer(aliceToken)))
+        mockMvc.perform(post("/api/v1/me/orders").contentType(MediaType.APPLICATION_JSON)
+                        .content(api.json(Map.of("shippingAddress", "1 Main Street, Pune")))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(aliceToken)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.userId").value(aliceId));
     }

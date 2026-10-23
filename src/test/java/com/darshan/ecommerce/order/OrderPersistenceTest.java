@@ -12,6 +12,7 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
@@ -93,10 +94,30 @@ class OrderPersistenceTest {
         Order order = orderRepository.saveAndFlush(newOrder("ORD-2026-000004"));
         assertThat(order.getVersion()).isZero();
 
-        order.setStatus(Order.OrderStatus.PAID);
+        order.changeStatus(OrderStatus.PAID);
         orderRepository.saveAndFlush(order);
 
         assertThat(order.getVersion()).isEqualTo(1);
+    }
+
+    @Test
+    void storesTheLineTotalsAndTheirSumAsTheOrderTotal() {
+        Order order = orderRepository.saveAndFlush(newOrder("ORD-2026-000005"));
+
+        BigDecimal total = jdbcTemplate.queryForObject(
+                "SELECT total_amount FROM orders WHERE id = ?", BigDecimal.class, order.getId());
+        BigDecimal lines = jdbcTemplate.queryForObject(
+                "SELECT SUM(line_total) FROM order_items WHERE order_id = ?", BigDecimal.class, order.getId());
+        assertThat(total).isEqualTo(new BigDecimal("1020.00")).isEqualTo(lines);
+    }
+
+    @Test
+    void rejectsAStatusOutsideTheLifecycle() {
+        Order order = orderRepository.saveAndFlush(newOrder("ORD-2026-000006"));
+
+        assertThatThrownBy(() -> jdbcTemplate.update("UPDATE orders SET status = 'LOST' WHERE id = ?", order.getId()))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("chk_orders_status");
     }
 
     @Test
@@ -118,7 +139,7 @@ class OrderPersistenceTest {
     }
 
     private Order newOrder(String orderNumber) {
-        Order order = new Order(orderNumber, user, new BigDecimal("1020.00"));
+        Order order = new Order(orderNumber, user, "1 Main Street, Pune");
         order.addItem(new OrderItem(laptop, 1, laptop.getPrice()));
         order.addItem(new OrderItem(mouse, 1, mouse.getPrice()));
         return order;
