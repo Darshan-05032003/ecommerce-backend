@@ -1,8 +1,10 @@
 package com.darshan.ecommerce.auth;
 
 import com.darshan.ecommerce.MutableClock;
-import com.darshan.ecommerce.common.security.InvalidTokenException;
+import com.darshan.ecommerce.auth.RefreshTokenService.Rejected;
+import com.darshan.ecommerce.auth.RefreshTokenService.Rotated;
 import com.darshan.ecommerce.user.User;
+import com.darshan.ecommerce.user.UserRepository;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,7 +20,6 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -33,6 +34,9 @@ class RefreshTokenServiceTest {
     @Mock
     private RefreshTokenRepository repository;
 
+    @Mock
+    private UserRepository userRepository;
+
     private final MutableClock clock = new MutableClock(START);
     private final User user = new User("alice@example.com", "hash", "Alice", Set.of());
     private RefreshTokenService service;
@@ -40,14 +44,16 @@ class RefreshTokenServiceTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(user, "id", 7L);
-        service = new RefreshTokenService(repository,
+        service = new RefreshTokenService(repository, userRepository,
                 new JwtProperties("unit-test-secret-0123456789abcdef0123456789", "issuer", Duration.ofMinutes(15), TTL),
                 clock);
     }
 
     @Test
     void issueStoresOnlyTheHashWithANewFamilyAndTheConfiguredExpiry() {
-        String raw = service.issue(user);
+        when(userRepository.getReferenceById(7L)).thenReturn(user);
+
+        String raw = service.issue(7L);
 
         ArgumentCaptor<RefreshToken> saved = ArgumentCaptor.forClass(RefreshToken.class);
         verify(repository).save(saved.capture());
@@ -67,18 +73,20 @@ class RefreshTokenServiceTest {
         });
         clock.advance(Duration.ofHours(1));
 
-        RefreshTokenService.Rotation rotation = service.rotate("raw-1");
+        RefreshTokenService.RotationResult result = service.rotate("raw-1");
 
-        assertThat(rotation.user()).isSameAs(user);
-        assertThat(rotation.rawToken()).isNotEqualTo("raw-1");
+        assertThat(result).isInstanceOfSatisfying(Rotated.class, rotated -> {
+            assertThat(rotated.user()).isSameAs(user);
+            assertThat(rotated.rawToken()).isNotEqualTo("raw-1");
+            ArgumentCaptor<RefreshToken> saved = ArgumentCaptor.forClass(RefreshToken.class);
+            verify(repository).save(saved.capture());
+            assertThat(saved.getValue().getFamilyId()).isEqualTo("family-a");
+            assertThat(saved.getValue().getTokenHash()).isEqualTo(OpaqueTokens.hash(rotated.rawToken()));
+            assertThat(saved.getValue().getExpiresAt()).isEqualTo(clock.instant().plus(TTL));
+        });
         assertThat(current.isRevoked()).isTrue();
         assertThat(current.getRevokedAt()).isEqualTo(clock.instant());
         assertThat(current.getReplacedById()).isEqualTo(42L);
-        ArgumentCaptor<RefreshToken> saved = ArgumentCaptor.forClass(RefreshToken.class);
-        verify(repository).save(saved.capture());
-        assertThat(saved.getValue().getFamilyId()).isEqualTo("family-a");
-        assertThat(saved.getValue().getTokenHash()).isEqualTo(OpaqueTokens.hash(rotation.rawToken()));
-        assertThat(saved.getValue().getExpiresAt()).isEqualTo(clock.instant().plus(TTL));
         verify(repository, never()).revokeFamily(any(), any());
     }
 
@@ -88,7 +96,7 @@ class RefreshTokenServiceTest {
         reused.revoke(START);
         when(repository.revokeFamily("family-a", clock.instant())).thenReturn(2);
 
-        assertThatThrownBy(() -> service.rotate("raw-old")).isInstanceOf(InvalidTokenException.class);
+        assertThat(service.rotate("raw-old")).isEqualTo(new Rejected(Rejected.Reason.REUSED));
 
         verify(repository).revokeFamily("family-a", clock.instant());
         verify(repository, never()).save(any());
@@ -99,7 +107,7 @@ class RefreshTokenServiceTest {
         RefreshToken expired = stored("raw-expired", "family-a", START.plus(TTL));
         clock.advance(TTL);
 
-        assertThatThrownBy(() -> service.rotate("raw-expired")).isInstanceOf(InvalidTokenException.class);
+        assertThat(service.rotate("raw-expired")).isEqualTo(new Rejected(Rejected.Reason.EXPIRED));
 
         assertThat(expired.isRevoked()).isTrue();
         verify(repository, never()).revokeFamily(any(), any());
@@ -110,7 +118,7 @@ class RefreshTokenServiceTest {
     void anUnknownTokenIsRejected() {
         when(repository.findByTokenHash(OpaqueTokens.hash("nope"))).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.rotate("nope")).isInstanceOf(InvalidTokenException.class);
+        assertThat(service.rotate("nope")).isEqualTo(new Rejected(Rejected.Reason.UNKNOWN));
     }
 
     @Test

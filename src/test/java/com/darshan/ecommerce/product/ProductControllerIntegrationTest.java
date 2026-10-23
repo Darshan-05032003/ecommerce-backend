@@ -1,6 +1,6 @@
 package com.darshan.ecommerce.product;
 
-import com.darshan.ecommerce.TestcontainersConfiguration;
+import com.darshan.ecommerce.IntegrationTest;
 import com.darshan.ecommerce.user.Role;
 import com.darshan.ecommerce.user.RoleRepository;
 import com.darshan.ecommerce.user.User;
@@ -9,12 +9,8 @@ import com.darshan.ecommerce.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,10 +24,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-@Import(TestcontainersConfiguration.class)
-@ActiveProfiles("test")
+@IntegrationTest
 @Transactional
 public class ProductControllerIntegrationTest {
 

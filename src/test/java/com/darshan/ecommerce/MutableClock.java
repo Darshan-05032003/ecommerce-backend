@@ -24,6 +24,10 @@ public class MutableClock extends Clock {
         instant = instant.plus(duration);
     }
 
+    public void set(Instant newInstant) {
+        instant = newInstant;
+    }
+
     @Override
     public ZoneId getZone() {
         return zone;

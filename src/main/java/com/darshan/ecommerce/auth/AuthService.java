@@ -1,9 +1,10 @@
 package com.darshan.ecommerce.auth;
 
+import com.darshan.ecommerce.auth.RefreshTokenService.Rejected;
+import com.darshan.ecommerce.auth.RefreshTokenService.Rotated;
 import com.darshan.ecommerce.common.logging.LogMasking;
+import com.darshan.ecommerce.common.security.InvalidTokenException;
 import com.darshan.ecommerce.common.security.UserPrincipal;
-import com.darshan.ecommerce.user.User;
-import com.darshan.ecommerce.user.UserRepository;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,25 +13,22 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
+// Deliberately not @Transactional: each step commits on its own, so a rejected refresh still
+// keeps the revocation that RefreshTokenService wrote while examining the token.
 @Service
-@Transactional
 public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final AuthenticationManager authenticationManager;
-    private final UserRepository userRepository;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
 
     public AuthService(AuthenticationManager authenticationManager,
-                       UserRepository userRepository,
                        JwtService jwtService,
                        RefreshTokenService refreshTokenService) {
         this.authenticationManager = authenticationManager;
-        this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
     }
@@ -46,13 +44,14 @@ public class AuthService {
         }
 
         UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
-        User user = userRepository.getReferenceById(principal.getId());
-        return tokens(principal, refreshTokenService.issue(user));
+        return tokens(principal, refreshTokenService.issue(principal.getId()));
     }
 
     public AuthResponse refresh(RefreshTokenRequest request) {
-        RefreshTokenService.Rotation rotation = refreshTokenService.rotate(request.refreshToken());
-        return tokens(CustomUserDetailsService.toPrincipal(rotation.user()), rotation.rawToken());
+        return switch (refreshTokenService.rotate(request.refreshToken())) {
+            case Rotated rotated -> tokens(CustomUserDetailsService.toPrincipal(rotated.user()), rotated.rawToken());
+            case Rejected rejected -> throw new InvalidTokenException("Invalid or expired refresh token");
+        };
     }
 
     public void logout(RefreshTokenRequest request) {
