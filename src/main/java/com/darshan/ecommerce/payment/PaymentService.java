@@ -28,15 +28,17 @@ public class PaymentService {
     private final PaymentAttemptLog attemptLog;
     private final PaymentRepository paymentRepository;
     private final ApplicationEventPublisher events;
+    private final PaymentMetrics metrics;
 
     public PaymentService(OrderService orderService, PaymentProcessorRegistry processors,
                           PaymentAttemptLog attemptLog, PaymentRepository paymentRepository,
-                          ApplicationEventPublisher events) {
+                          ApplicationEventPublisher events, PaymentMetrics metrics) {
         this.orderService = orderService;
         this.processors = processors;
         this.attemptLog = attemptLog;
         this.paymentRepository = paymentRepository;
         this.events = events;
+        this.metrics = metrics;
     }
 
     // The attempt row is written by PaymentAttemptLog in its own transactions, so it is kept
@@ -59,6 +61,7 @@ public class PaymentService {
             result = processor.charge(attempt, request);
         } catch (RuntimeException ex) {
             attemptLog.fail(attempt.getId(), "Not processed: " + ex.getClass().getSimpleName());
+            metrics.paymentFailed(request.method(), PaymentMetrics.FailureReason.ERROR);
             throw ex;
         }
 
@@ -66,11 +69,13 @@ public class PaymentService {
             case GatewayResult.Approved(String reference) -> succeed(order, attempt.getId(), reference);
             case GatewayResult.Declined(String reason) -> {
                 attemptLog.fail(attempt.getId(), reason);
+                metrics.paymentFailed(request.method(), PaymentMetrics.FailureReason.DECLINED);
                 log.info("Payment {} for order {} declined", attempt.getId(), orderId);
                 throw new BusinessRuleViolationException(PAYMENT_DECLINED, "The payment was declined: " + reason);
             }
             case GatewayResult.TimedOut() -> {
                 attemptLog.fail(attempt.getId(), "Payment provider timed out");
+                metrics.paymentFailed(request.method(), PaymentMetrics.FailureReason.TIMEOUT);
                 log.warn("Payment {} for order {} timed out at the provider", attempt.getId(), orderId);
                 throw UpstreamServiceException.gatewayTimeout(PAYMENT_TIMEOUT,
                         "The payment provider did not answer in time; the order was not paid");

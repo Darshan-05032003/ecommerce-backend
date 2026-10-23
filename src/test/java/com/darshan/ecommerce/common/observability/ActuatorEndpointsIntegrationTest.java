@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -94,11 +95,25 @@ class ActuatorEndpointsIntegrationTest {
     }
 
     @Test
-    void prometheusScrapeIsAvailableToAdmins() throws Exception {
+    void prometheusScrapeContainsTheBusinessMetricsBeforeAnyTraffic() throws Exception {
         mockMvc.perform(get("/actuator/prometheus").header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("jvm_memory_used_bytes{")))
+                .andExpect(content().string(containsString("# TYPE orders_placed_total counter")))
+                .andExpect(content().string(containsString("payments_failed_total{")))
+                .andExpect(content().string(containsString("method=\"CARD\"")))
+                .andExpect(content().string(containsString("reason=\"declined\"")))
+                .andExpect(content().string(containsString("orders_placement_seconds_count{")))
+                .andExpect(content().string(containsString("outcome=\"created\"")))
                 .andExpect(content().string(containsString("application=\"ecommerce-backend\"")));
+    }
+
+    @Test
+    void metricsEndpointDescribesAMeter() throws Exception {
+        mockMvc.perform(get("/actuator/metrics/payments.failed").header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("payments.failed"))
+                .andExpect(jsonPath("$.availableTags[?(@.tag == 'method')].values[*]")
+                        .value(containsInAnyOrder("CARD", "UPI", "COD")));
     }
 
     @ParameterizedTest
