@@ -22,9 +22,9 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
                          AuthenticationException exception) throws IOException {
-        if (exception instanceof InvalidBearerTokenException) {
+        if (exception instanceof InvalidTokenException invalidToken) {
             response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer error=\"invalid_token\"");
-            writer.write(request, response, HttpStatus.UNAUTHORIZED, "Invalid or expired access token");
+            writer.write(request, response, HttpStatus.UNAUTHORIZED, invalidToken.getMessage());
         } else {
             response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
             writer.write(request, response, HttpStatus.UNAUTHORIZED, "Authentication required");

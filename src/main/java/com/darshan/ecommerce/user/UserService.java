@@ -25,42 +25,35 @@ public class UserService {
         this.passwordEncoder = passwordEncoder;
     }
 
-    public UserResponseDTO register(RegisterUserRequestDTO request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
+    // The existence check gives a clean 409; the unique index on email is what makes it safe
+    // when two registrations for the same address race, and the handler maps that to 409 too.
+    public UserResponse register(RegisterUserRequest request) {
+        if (userRepository.existsByEmail(request.email())) {
             throw new ConflictException("Email already registered");
         }
-        
         Role customerRole = roleRepository.findByName(Role.CUSTOMER)
                 .orElseThrow(() -> new IllegalStateException("Role " + Role.CUSTOMER + " is not seeded"));
 
-        User user = new User(request.getEmail(), passwordEncoder.encode(request.getPassword()),
-                request.getFullName(), Set.of(customerRole));
-        return mapToDTO(userRepository.save(user));
+        User user = new User(request.email(), passwordEncoder.encode(request.password()),
+                request.fullName(), Set.of(customerRole));
+        return toResponse(userRepository.save(user));
     }
 
-    public UserResponseDTO getById(Long id) {
+    @Transactional(readOnly = true)
+    public UserResponse getById(Long id) {
         return userRepository.findWithRolesById(id)
-                .map(this::mapToDTO)
+                .map(UserService::toResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + id));
     }
 
-    public User getEntityById(Long id) {
-        return userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + id));
+    @Transactional(readOnly = true)
+    public List<UserResponse> listAll() {
+        return userRepository.findAll().stream().map(UserService::toResponse).toList();
     }
 
-    public List<UserResponseDTO> listAll() {
-        return userRepository.findAll().stream().map(this::mapToDTO).toList();
-    }
-    
-    private UserResponseDTO mapToDTO(User user) {
-        UserResponseDTO dto = new UserResponseDTO();
-        dto.setId(user.getId());
-        dto.setEmail(user.getEmail());
-        dto.setFullName(user.getFullName());
-        dto.setCreatedAt(user.getCreatedAt());
-        dto.setRoles(user.getRoles().stream().map(Role::getName).collect(Collectors.toSet()));
-        return dto;
+    private static UserResponse toResponse(User user) {
+        return new UserResponse(user.getId(), user.getEmail(), user.getFullName(),
+                user.getRoles().stream().map(Role::shortName).collect(Collectors.toUnmodifiableSet()),
+                user.getCreatedAt());
     }
 }
-

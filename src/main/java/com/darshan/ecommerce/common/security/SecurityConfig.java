@@ -2,7 +2,7 @@ package com.darshan.ecommerce.common.security;
 
 import com.darshan.ecommerce.auth.CustomUserDetailsService;
 import com.darshan.ecommerce.auth.JwtAuthenticationFilter;
-import com.darshan.ecommerce.auth.JwtUtil;
+import com.darshan.ecommerce.auth.JwtService;
 import com.darshan.ecommerce.common.web.CorrelationIdFilter;
 
 import org.springframework.context.annotation.Bean;
@@ -59,7 +59,7 @@ public class SecurityConfig {
     // Stateless bearer-token API: no session, so no session cookie and nothing for CSRF to protect.
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http,
-                                           JwtUtil jwtUtil,
+                                           JwtService jwtService,
                                            CustomUserDetailsService userDetailsService,
                                            RestAuthenticationEntryPoint entryPoint,
                                            RestAccessDeniedHandler accessDeniedHandler) throws Exception {
@@ -71,12 +71,11 @@ public class SecurityConfig {
                 .authenticationEntryPoint(entryPoint)
                 .accessDeniedHandler(accessDeniedHandler))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
+                .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .anyRequest().authenticated())
-            .addFilterBefore(new JwtAuthenticationFilter(jwtUtil, userDetailsService, entryPoint),
+            .addFilterBefore(new JwtAuthenticationFilter(jwtService, userDetailsService, entryPoint),
                     UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

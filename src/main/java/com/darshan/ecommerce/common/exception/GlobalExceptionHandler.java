@@ -11,7 +11,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import com.darshan.ecommerce.common.security.InvalidTokenException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -69,6 +71,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
         return problem(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    // Unknown email and wrong password both arrive here as BadCredentialsException, so the
+    // response cannot be used to find out which addresses have an account.
+    @ExceptionHandler(BadCredentialsException.class)
+    ProblemDetail handleBadCredentials(BadCredentialsException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, "Invalid email or password");
+    }
+
+    @ExceptionHandler(InvalidTokenException.class)
+    ProblemDetail handleInvalidToken(InvalidTokenException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, ex.getMessage());
     }
 
     @ExceptionHandler(AuthenticationException.class)

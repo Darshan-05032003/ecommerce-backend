@@ -59,14 +59,14 @@ public class ProductControllerIntegrationTest {
                 "Admin User", Set.of(adminRole)));
 
         String loginJson = "{\"email\":\"admin@example.com\",\"password\":\"admin123\"}";
-        MvcResult result = mockMvc.perform(post("/api/auth/login")
+        MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(loginJson))
                 .andExpect(status().isOk())
                 .andReturn();
 
         String response = result.getResponse().getContentAsString();
-        adminToken = objectMapper.readTree(response).get("token").asString();
+        adminToken = objectMapper.readTree(response).get("accessToken").asString();
     }
 
     @Test
