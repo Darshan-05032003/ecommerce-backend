@@ -9,6 +9,8 @@ A REST API for a small online shop built with Spring Boot and MySQL. It models u
 | Language     | Java 21                                      |
 | Framework    | Spring Boot 4.1                              |
 | Persistence  | Spring Data JPA, Hibernate, MySQL, Flyway    |
+| Caching      | Spring Cache, Redis                          |
+| Mapping      | MapStruct                                    |
 | Security     | Spring Security, JWT (jjwt), Bucket4j        |
 | Validation   | Bean Validation (Jakarta)                    |
 | API docs     | springdoc-openapi (Swagger UI)               |
@@ -43,6 +45,29 @@ POST /api/v1/auth/logout     { refreshToken } -> 204
 - Sessions are stateless and CSRF protection is disabled because no cookie carries credentials. Browser origins allowed to call the API are configured with `CORS_ALLOWED_ORIGINS`.
 - Missing or invalid tokens produce a `401` and insufficient roles a `403`, both in the same problem detail format as every other error.
 
+## Product Catalogue
+
+```
+GET /api/v1/products?categoryId=2&minPrice=1000&maxPrice=5000&q=key&inStock=true&page=0&size=20&sort=price,desc
+```
+
+- Every filter is optional and they are combined with AND. `q` is a case-insensitive search in the product name; `%` and `_` in it are matched literally. `inStock=true` keeps products with stock above zero.
+- `size` defaults to 20 and may be at most 100; `page` starts at 0. Larger sizes and negative pages are rejected with `400`.
+- `sort` is `property` or `property,asc|desc`, where the property is one of `name`, `price` or `createdAt` (default `name`). Any other property is a `400`. The id is always added as a tie breaker so that pages are stable.
+- The response is a page object with `content`, `page`, `size`, `totalElements` and `totalPages`, not Spring's internal `Page` JSON.
+- Products are never physically deleted. `DELETE /api/v1/admin/products/{id}` sets `active` to false: the product disappears from `GET /api/v1/products` and `GET /api/v1/products/{id}` returns `404`, while the admin endpoints still list and return it and an update with `active: true` restores it. Order lines that reference the product keep working.
+- Each product response carries a `version`. `PUT /api/v1/admin/products/{id}` must send back the version that was read; if another admin saved in between, the request fails with `409` and nothing is changed.
+- The product page is loaded with its categories in one joined query plus the count query, whatever the page size. A test counts the statements with Hibernate statistics.
+
+### Caching
+
+`GET /api/v1/products/{id}` and `GET /api/v1/categories` are cached in Redis (cache-aside through Spring Cache). Values are stored as JSON, each cache with its own time to live (`CACHE_TTL_PRODUCTS`, default 10 minutes; `CACHE_TTL_CATEGORIES`, default 1 hour).
+
+- An admin product update replaces the cached entry, or removes it when the product becomes inactive. Soft delete and stock changes remove it. Any category change clears the category list, and a category rename also clears cached products, which embed the category name.
+- Cache updates run after the database transaction commits, so a rolled-back change never reaches the cache.
+- Product list pages are not cached: each combination of filters, sort and page would be a separate entry with a low hit rate, and a single product change would make an unknown number of them stale.
+- The time to live bounds how long a change made outside these endpoints (for example directly in the database) can stay invisible.
+
 ## Running Locally
 
 ```
@@ -56,7 +81,7 @@ In the `dev` profile the application creates an admin account on first start. Th
 
 ## Database
 
-The schema is owned by Flyway migrations in `src/main/resources/db/migration` and applied on startup in every profile. `V1` creates the tables with primary and foreign keys, `NOT NULL`, `UNIQUE` (user email, product SKU, one cart line per user and product, order number) and `CHECK` constraints (non-negative price and stock, positive quantities), plus indexes for the query paths the application uses. `V2` inserts the two roles and `V3` adds the refresh token table. Hibernate runs with `ddl-auto=validate`, so a mismatch between the entities and the migrated schema fails startup instead of silently altering tables, and `open-in-view` is off, so every lazy association is loaded inside a service transaction.
+The schema is owned by Flyway migrations in `src/main/resources/db/migration` and applied on startup in every profile. `V1` creates the tables with primary and foreign keys, `NOT NULL`, `UNIQUE` (user email, product SKU, one cart line per user and product, order number) and `CHECK` constraints (non-negative price and stock, positive quantities), plus indexes for the query paths the application uses. `V2` inserts the two roles, `V3` adds the refresh token table and `V4` makes the product category mandatory and indexes active products by category. Hibernate runs with `ddl-auto=validate`, so a mismatch between the entities and the migrated schema fails startup instead of silently altering tables, and `open-in-view` is off, so every lazy association is loaded inside a service transaction.
 
 Every entity extends `BaseEntity`, which carries the id, `createdAt`, `updatedAt`, `createdBy` and `lastModifiedBy`. The timestamps come from the application `Clock` and the auditor is the authenticated user's email, or `system` when no user is authenticated. `Product` and `Order` carry a `@Version` column for optimistic locking. Order numbers have the form `ORD-2026-000123` and are taken from a per-year counter table in its own short transaction.
 
@@ -66,7 +91,7 @@ Every entity extends `BaseEntity`, which carries the id, `createdAt`, `updatedAt
 ./mvnw clean verify
 ```
 
-Integration and repository tests start a MySQL 8.4 container with Testcontainers and run the Flyway migrations against it, so Docker must be running. The same command runs in GitHub Actions on every push to `master` and on every pull request.
+Repository tests start a MySQL 8.4 container with Testcontainers and run the Flyway migrations against it; full integration tests also start a Redis 7 container for the caches. Docker must be running. The same command runs in GitHub Actions on every push to `master` and on every pull request.
 
 ## Errors and Correlation IDs
 
@@ -93,8 +118,10 @@ Each request gets a correlation id: the value of the `X-Correlation-Id` request 
 | `POST` | `/api/v1/auth/login` | public | Exchange credentials for an access and a refresh token |
 | `POST` | `/api/v1/auth/refresh` | public | Rotate the refresh token, get a new access token |
 | `POST` | `/api/v1/auth/logout` | public | Revoke the refresh token and its family |
-| `GET`  | `/api/v1/products` | public | List products (optional `?q=` search) |
-| `GET`  | `/api/v1/products/{id}` | public | Get product by id |
+| `GET`  | `/api/v1/products` | public | List active products with filters, paging and sorting |
+| `GET`  | `/api/v1/products/{id}` | public | Get an active product (cached) |
+| `GET`  | `/api/v1/categories` | public | List categories (cached) |
+| `GET`  | `/api/v1/categories/{id}` | public | Get a category |
 | `GET`  | `/api/v1/me` | CUSTOMER, ADMIN | My profile |
 | `GET`  | `/api/v1/me/cart` | CUSTOMER, ADMIN | My cart |
 | `POST` | `/api/v1/me/cart?productId=&quantity=` | CUSTOMER, ADMIN | Add an item to my cart |
@@ -104,9 +131,14 @@ Each request gets a correlation id: the value of the `X-Correlation-Id` request 
 | `GET`  | `/api/v1/admin/users` | ADMIN | List users |
 | `GET`  | `/api/v1/admin/users/{id}` | ADMIN | Get any user |
 | `GET`  | `/api/v1/admin/users/{id}/orders` | ADMIN | List any user's orders |
+| `GET`  | `/api/v1/admin/products` | ADMIN | List all products, including inactive ones |
+| `GET`  | `/api/v1/admin/products/{id}` | ADMIN | Get any product, including inactive ones |
 | `POST` | `/api/v1/admin/products` | ADMIN | Create a product; requires a unique `sku` |
-| `PUT`  | `/api/v1/admin/products/{id}` | ADMIN | Update a product |
-| `DELETE` | `/api/v1/admin/products/{id}` | ADMIN | Delete a product |
+| `PUT`  | `/api/v1/admin/products/{id}` | ADMIN | Update a product; requires the current `version` |
+| `DELETE` | `/api/v1/admin/products/{id}` | ADMIN | Soft-delete a product |
+| `POST` | `/api/v1/admin/categories` | ADMIN | Create a category |
+| `PUT`  | `/api/v1/admin/categories/{id}` | ADMIN | Rename or describe a category |
+| `DELETE` | `/api/v1/admin/categories/{id}` | ADMIN | Delete a category that has no products |
 
 Every registered account has the CUSTOMER role. Everything under `/api/v1/admin/**` requires ADMIN both in the security filter chain and through `@PreAuthorize` on the controllers.
 
@@ -126,11 +158,11 @@ src/main/java/com/darshan/ecommerce/
 ├── cart/        # cart items and the /me/cart endpoints
 ├── order/       # orders, order items, /me/orders and the admin order view
 └── common/
-    ├── config/      # typed settings, clock, JPA auditing, development seed data
+    ├── config/      # typed settings, clock, JPA auditing, Redis caches, development seed data
     ├── exception/   # problem detail factory and global error handling
     ├── logging/     # masking helpers for log output
     ├── persistence/ # base entity and auditor lookup
     ├── security/    # filter chain, CORS, principal, 401/403 problem responses
     ├── validation/  # custom Bean Validation constraints
-    └── web/         # correlation id filter
+    └── web/         # correlation id filter, paging parameters, sort whitelist, page response
 ```
