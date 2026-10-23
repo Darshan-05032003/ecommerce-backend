@@ -13,6 +13,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
@@ -137,6 +139,31 @@ class OrderPersistenceTest {
         firstAdmin.setPrice(new BigDecimal("11.00"));
         assertThatThrownBy(() -> productRepository.saveAndFlush(firstAdmin))
                 .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+    }
+
+    @Test
+    void findsAnOrderWithItsLinesOnlyForItsOwner() {
+        Order order = orderRepository.saveAndFlush(newOrder());
+        User otherUser = userRepository.saveAndFlush(aUser().build());
+        entityManager.clear();
+
+        assertThat(orderRepository.findWithItemsByIdAndUserId(order.getId(), user.getId()))
+                .hasValueSatisfying(found -> assertThat(found.getItems()).hasSize(2));
+        assertThat(orderRepository.findWithItemsByIdAndUserId(order.getId(), otherUser.getId())).isEmpty();
+    }
+
+    @Test
+    void filtersOrderIdsByStatusOrReturnsAllWithoutAFilter() {
+        Order created = orderRepository.save(newOrder());
+        Order shipped = orderRepository.save(
+                anOrder().user(user).line(laptop, 1).status(OrderStatus.SHIPPED).build());
+        orderRepository.flush();
+        PageRequest page = PageRequest.of(0, 10, Sort.by("id"));
+
+        assertThat(orderRepository.findIdsByStatus(OrderStatus.SHIPPED, page).getContent())
+                .containsExactly(shipped.getId());
+        assertThat(orderRepository.findIdsByStatus(null, page).getContent())
+                .containsExactly(created.getId(), shipped.getId());
     }
 
     private Order newOrder() {
