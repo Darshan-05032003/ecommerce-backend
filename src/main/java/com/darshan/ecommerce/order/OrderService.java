@@ -47,7 +47,7 @@ public class OrderService {
         User user = getUser(userId);
         List<CartItem> cartItems = cartItemRepository.findByUser(user);
         if (cartItems.isEmpty()) {
-            throw new BusinessRuleViolationException("Cart is empty");
+            throw new BusinessRuleViolationException("CART_EMPTY", "Cart is empty");
         }
 
         BigDecimal total = BigDecimal.ZERO;

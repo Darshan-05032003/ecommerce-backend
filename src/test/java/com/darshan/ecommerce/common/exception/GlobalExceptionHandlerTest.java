@@ -103,6 +103,7 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.status").value(422))
                 .andExpect(jsonPath("$.detail").value("Cart is empty"))
+                .andExpect(jsonPath("$.errorCode").value("CART_EMPTY"))
                 .andExpect(jsonPath("$.correlationId", matchesPattern(UUID_PATTERN)));
     }
 
@@ -183,7 +184,7 @@ class GlobalExceptionHandlerTest {
 
         @GetMapping("/business-rule")
         void businessRule() {
-            throw new BusinessRuleViolationException("Cart is empty");
+            throw new BusinessRuleViolationException("CART_EMPTY", "Cart is empty");
         }
 
         @GetMapping("/forbidden")
