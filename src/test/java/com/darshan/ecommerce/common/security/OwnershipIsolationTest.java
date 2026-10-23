@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Map;
+import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -53,6 +54,7 @@ class OwnershipIsolationTest {
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/v1/me/orders").contentType(MediaType.APPLICATION_JSON)
                         .content(api.json(Map.of("shippingAddress", "1 Main Street, Pune")))
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .header(HttpHeaders.AUTHORIZATION, bearer(aliceToken)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.userId").value(aliceId));

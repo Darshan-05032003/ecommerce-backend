@@ -12,6 +12,7 @@ import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
@@ -29,7 +30,6 @@ public class OrderService {
     private final CartItemRepository cartItemRepository;
     private final UserRepository userRepository;
     private final ProductService productService;
-    private final OrderNumberGenerator orderNumberGenerator;
     private final AuditorAware<String> auditor;
     private final Clock clock;
 
@@ -38,7 +38,6 @@ public class OrderService {
                         CartItemRepository cartItemRepository,
                         UserRepository userRepository,
                         ProductService productService,
-                        OrderNumberGenerator orderNumberGenerator,
                         AuditorAware<String> auditor,
                         Clock clock) {
         this.orderRepository = orderRepository;
@@ -46,7 +45,6 @@ public class OrderService {
         this.cartItemRepository = cartItemRepository;
         this.userRepository = userRepository;
         this.productService = productService;
-        this.orderNumberGenerator = orderNumberGenerator;
         this.auditor = auditor;
         this.clock = clock;
     }
@@ -57,7 +55,11 @@ public class OrderService {
         return orderRepository.findByUser(user, pageable).map(OrderResponse::from);
     }
 
-    public OrderResponse placeOrder(Long userId, PlaceOrderRequest request) {
+    // Runs inside the placement transaction opened by OrderPlacementService (MANDATORY): every line
+    // reserves stock, the order is saved and the ordered cart lines are removed, or nothing changes.
+    // Any exception thrown here is unchecked, so the transaction rolls back by default.
+    @Transactional(propagation = Propagation.MANDATORY)
+    public OrderResponse create(Long userId, String orderNumber, PlaceOrderRequest request) {
         // Products are joined into the cart query, and the lines are reserved in product id order so
         // two orders touching the same products lock the rows in the same order and cannot deadlock.
         List<CartItem> cartItems = cartItemRepository.findCartWithProducts(userId).stream()
@@ -67,8 +69,7 @@ public class OrderService {
             throw new BusinessRuleViolationException(CART_EMPTY, "Cart is empty");
         }
 
-        Order order = new Order(orderNumberGenerator.next(), userRepository.getReferenceById(userId),
-                request.shippingAddress().strip());
+        Order order = new Order(orderNumber, userRepository.getReferenceById(userId), request.shippingAddress().strip());
         for (CartItem line : cartItems) {
             productService.reserveStock(line.getProduct().getId(), line.getQuantity());
             order.addItem(new OrderItem(line.getProduct(), line.getQuantity(), line.getProduct().getPrice()));

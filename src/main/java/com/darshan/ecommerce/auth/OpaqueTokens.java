@@ -1,11 +1,9 @@
 package com.darshan.ecommerce.auth;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import com.darshan.ecommerce.common.crypto.Sha256;
+
 import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.HexFormat;
 
 // Refresh tokens are random, not signed: 256 bits from SecureRandom, Base64url for transport,
 // and only the SHA-256 digest is persisted so a database leak does not hand out valid tokens.
@@ -24,11 +22,6 @@ final class OpaqueTokens {
     }
 
     static String hash(String rawToken) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(rawToken.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is required by the Java platform", e);
-        }
+        return Sha256.hex(rawToken);
     }
 }
