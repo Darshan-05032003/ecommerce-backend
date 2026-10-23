@@ -19,7 +19,7 @@ class SchemaMigrationTest {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank", String.class);
 
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7");
     }
 
     @Test
@@ -29,7 +29,7 @@ class SchemaMigrationTest {
 
         assertThat(tables).contains("roles", "users", "user_roles", "categories", "products",
                 "cart_items", "orders", "order_items", "order_number_sequence", "refresh_tokens",
-                "order_status_history", "idempotency_keys");
+                "order_status_history", "idempotency_keys", "payments");
     }
 
     @Test
@@ -44,7 +44,8 @@ class SchemaMigrationTest {
                 "idx_orders_user_created", "idx_order_items_order", "idx_order_items_product",
                 "uk_refresh_tokens_token_hash", "idx_refresh_tokens_family", "idx_refresh_tokens_user",
                 "idx_orders_status_created", "idx_order_status_history_order",
-                "uk_idempotency_keys_user_key", "idx_idempotency_keys_created");
+                "uk_idempotency_keys_user_key", "idx_idempotency_keys_created", "uk_payments_active_order",
+                "idx_payments_order");
         assertThat(indexes).doesNotContain("idx_products_active");
     }
 
