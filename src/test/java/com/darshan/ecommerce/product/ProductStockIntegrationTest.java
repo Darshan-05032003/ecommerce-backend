@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -92,6 +93,17 @@ class ProductStockIntegrationTest {
         assertThatThrownBy(() -> productService.reserveStock(product.getId(), 1))
                 .isInstanceOf(IllegalTransactionStateException.class);
         assertThat(stockOf(product)).isEqualTo(5);
+    }
+
+    @Test
+    void anEditBasedOnTheStockReadBeforeAReservationIsRejected() {
+        Product readByAdmin = productRepository.findById(product.getId()).orElseThrow();
+        transaction.executeWithoutResult(status -> productService.reserveStock(product.getId(), 2));
+
+        readByAdmin.setStockQuantity(5);
+        assertThatThrownBy(() -> productRepository.save(readByAdmin))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+        assertThat(stockOf(product)).isEqualTo(3);
     }
 
     @Test
