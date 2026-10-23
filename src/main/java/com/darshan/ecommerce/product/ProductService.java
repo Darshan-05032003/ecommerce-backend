@@ -2,11 +2,16 @@ package com.darshan.ecommerce.product;
 
 import com.darshan.ecommerce.category.Category;
 import com.darshan.ecommerce.category.CategoryRepository;
+import com.darshan.ecommerce.common.config.CacheNames;
 import com.darshan.ecommerce.common.exception.ConflictException;
 import com.darshan.ecommerce.common.exception.InsufficientStockException;
 import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
 import com.darshan.ecommerce.common.web.PageResponse;
 
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -28,12 +33,17 @@ public class ProductService {
         this.mapper = mapper;
     }
 
+    // Only active products reach the cache: a missing or soft-deleted product throws, and Spring
+    // Cache never stores a method call that ended in an exception.
+    @Cacheable(cacheNames = CacheNames.PRODUCTS, key = "#id")
     public ProductResponse getActiveById(Long id) {
         return productRepository.findByIdAndActiveTrue(id)
                 .map(mapper::toResponse)
                 .orElseThrow(() -> notFound(id));
     }
 
+    // Pages are not cached: every combination of filters, sort and page would be its own entry, hits
+    // would be rare, and one product change would make an unknown number of pages stale.
     public PageResponse<ProductResponse> listActive(ProductFilter filter, Pageable pageable) {
         return page(filter.toSpecification().and(ProductSpecifications.active()), pageable);
     }
@@ -56,7 +66,12 @@ public class ProductService {
         return mapper.toResponse(productRepository.save(product));
     }
 
+    // The cache holds what the public endpoint may return, so an update that leaves the product
+    // active replaces the entry and one that deactivates it removes the entry.
     @Transactional
+    @Caching(
+            put = @CachePut(cacheNames = CacheNames.PRODUCTS, key = "#id", unless = "!#result.active()"),
+            evict = @CacheEvict(cacheNames = CacheNames.PRODUCTS, key = "#id", condition = "!#result.active()"))
     public ProductResponse update(Long id, UpdateProductRequest request) {
         Product product = load(id);
         if (!request.version().equals(product.getVersion())) {
@@ -76,11 +91,13 @@ public class ProductService {
     // Soft delete: sold products are referenced by order lines and must stay for history, so the row
     // stays and only disappears from the public catalogue. Deleting twice is a no-op.
     @Transactional
+    @CacheEvict(cacheNames = CacheNames.PRODUCTS, key = "#id")
     public void delete(Long id) {
         load(id).setActive(false);
     }
 
     @Transactional
+    @CacheEvict(cacheNames = CacheNames.PRODUCTS, key = "#productId")
     public void decreaseStock(Long productId, int quantity) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> notFound(productId));
