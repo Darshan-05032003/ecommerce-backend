@@ -49,10 +49,11 @@ sequenceDiagram
     participant N as Notification listener
     participant M as MailHog
     C->>O: POST /me/orders with Idempotency-Key
-    O->>DB: insert key row (unique per user and key)
-    alt key already completed with the same body
+    O->>DB: look up the key for this user
+    alt key already stored with the same body
         O-->>C: stored response, Idempotent-Replayed true
     end
+    O->>DB: insert key row (unique per user and key), first statement of the order transaction
     O->>DB: UPDATE stock WHERE stock >= quantity, per line in product id order
     O->>DB: insert order, lines and CREATED history row, clear cart
     O->>DB: store response with the key, commit
@@ -60,8 +61,9 @@ sequenceDiagram
     N-)M: "Order received" email
     O-->>C: 201 Created
     C->>P: POST /me/orders/42/payments
+    P->>P: pick the processor for CARD, UPI or COD and validate the request
     P->>DB: record attempt INITIATED in its own transaction
-    P->>P: pick processor for CARD, UPI or COD and call the gateway
+    P->>DB: lock the order row, then call the gateway
     P->>DB: payment SUCCEEDED, order PAID, history row, commit
     P-)N: OrderPaidEvent, delivered after commit
     N-)M: "Order confirmed" email
@@ -123,7 +125,7 @@ The defaults in `application.yml` point at the Compose ports, so no other config
 
 Docker must be running: integration tests start one MySQL 8.4 and one Redis 7 container through Testcontainers and share them across all test classes. CI runs the same command on every push to `master` and every pull request, and builds the Docker image in a parallel job.
 
-The suite has 599 tests:
+The suite has 600 tests:
 
 | Layer | Tools | Examples |
 |-------|-------|----------|
@@ -207,4 +209,4 @@ Settings come from environment variables (all listed in `.env.example`) and are 
 | `test` | The test suite, on Testcontainers MySQL and Redis. |
 | `prod` | No secret defaults, graceful shutdown, JSON logs. |
 
-Payments use a simulated gateway (`PAYMENT_GATEWAY=simulated`) that decides the outcome from the token, like a provider's test cards: a value containing `decline` is declined, `timeout` times out, anything else is approved. No real money is moved.
+Payments use a simulated gateway (`PAYMENT_GATEWAY=simulated`) that decides the outcome from the token, like a provider's test cards: a value containing `decline` is declined, `timeout` times out, `refundfail` is approved but its refund is rejected, and anything else is approved. No real money is moved.
