@@ -10,6 +10,7 @@ A REST API for a small online shop built with Spring Boot and MySQL. It models u
 | Framework    | Spring Boot 4.1                              |
 | Persistence  | Spring Data JPA, Hibernate, MySQL, Flyway    |
 | Caching      | Spring Cache, Redis                          |
+| Messaging    | Spring application events, JavaMail (MailHog in development) |
 | Mapping      | MapStruct                                    |
 | Security     | Spring Security, JWT (jjwt), Bucket4j        |
 | Validation   | Bean Validation (Jakarta)                    |
@@ -115,6 +116,35 @@ PATCH /api/v1/admin/orders/{id}/status   { "status": "SHIPPED", "reason": "Hande
 - Another user's order answers `404`, the same as an order that does not exist.
 - Order lists are paged (`size` up to 100, `sort` by `createdAt` or `totalAmount`, newest first by default) and load their lines in a fixed number of queries: a page of order ids, the count, then the orders with their lines and products for those ids. A test counts the statements with Hibernate statistics. Admins can list all orders, optionally filtered by `status`.
 
+## Payments
+
+```
+POST /api/v1/me/orders/{id}/payments   { "method": "CARD", "paymentToken": "tok_visa" }
+                                       { "method": "UPI", "upiId": "name@okbank" }
+                                       { "method": "COD" }
+```
+
+- Only the owner can pay for an order (another user's order is `404`), and only while it is `CREATED` (otherwise `409`). A successful payment returns `201` with the payment, marks the order `PAID` and adds a status history row.
+- Each method is a `PaymentProcessor` implementation (card, UPI, cash on delivery). A registry built from all processor beans picks the one for the requested method; the application refuses to start if two processors claim the same method. Card and UPI payments go through a `PaymentGateway`. Cash on delivery confirms the order without calling the gateway: the cash is collected by the courier at delivery, so there is nothing to charge or refund before shipping.
+- The API never receives card numbers. A card payment sends a token from the provider's client SDK (`tok_...`), a UPI payment the customer's UPI address. A missing or malformed value is `400` (`PAYMENT_TOKEN_INVALID`, `UPI_ID_INVALID`).
+- Every attempt is stored in `payments` with status `INITIATED`, then `SUCCEEDED` or `FAILED` with the provider reference or failure reason. The attempt is written in its own transaction, so a failed attempt stays recorded even though the payment request's own transaction rolls back. A unique index allows any number of failed attempts but only one attempt in flight or succeeded per order, so a double-clicked "pay" charges once; the other request gets `409`.
+- A declined payment is `422` with `errorCode` `PAYMENT_DECLINED`. A provider that does not answer in time is `504` with `PAYMENT_TIMEOUT`. In both cases the order stays `CREATED` and can be paid again.
+- Cancelling a `PAID` order (by the customer or an admin) refunds the payment through the same processor, in the same transaction as the cancellation. If the provider rejects the refund the request fails with `502` `PAYMENT_REFUND_FAILED` (or `504` `PAYMENT_TIMEOUT`) and nothing changes: the order stays `PAID` and its stock stays reserved, so the cancellation can be retried.
+- Development and tests use a simulated gateway (`PAYMENT_GATEWAY=simulated`) that decides the outcome from the token or UPI address, like a provider's test cards: a value containing `decline` is declined, `timeout` times out, `refundfail` is charged but its refund is rejected, and anything else is approved. No real money is moved.
+
+## Events and Email
+
+The services publish `OrderPlacedEvent`, `OrderPaidEvent` and `OrderCancelledEvent` with Spring's `ApplicationEventPublisher`. A listener sends the customer an email for each through `JavaMailSender` (MailHog in development, UI at `http://localhost:8025`).
+
+- The listener runs only after the transaction that published the event commits (`@TransactionalEventListener(phase = AFTER_COMMIT)`), so a rolled-back order or payment never produces an email.
+- It runs asynchronously (`@Async`), so the SMTP call does not delay the HTTP response.
+- Delivery is at most once: if the application stops between the commit and the send, or the mail server refuses the message, that email is not retried. The failure is logged.
+- Recipient addresses are masked in the logs.
+
+### Asynchronous execution
+
+`@Async` work runs on a dedicated `ThreadPoolTaskExecutor` configured under `app.async` (`ASYNC_CORE_SIZE`, `ASYNC_MAX_SIZE`, `ASYNC_QUEUE_CAPACITY`, `ASYNC_REJECTION_POLICY`), validated at startup. The queue is bounded; when it is full and every thread is busy, the rejection policy applies (`CALLER_RUNS` by default: the submitting thread sends the email itself). Threads are named `async-N`. A task decorator copies the correlation id and the caller's security context into the worker thread and removes them afterwards, so log lines written by async work carry the correlation id of the request that caused it. Exceptions from `void` async methods are logged by an `AsyncUncaughtExceptionHandler`. On shutdown the executor waits up to 30 seconds for queued tasks.
+
 ## Running Locally
 
 ```
@@ -128,7 +158,7 @@ In the `dev` profile the application creates an admin account on first start. Th
 
 ## Database
 
-The schema is owned by Flyway migrations in `src/main/resources/db/migration` and applied on startup in every profile. `V1` creates the tables with primary and foreign keys, `NOT NULL`, `UNIQUE` (user email, product SKU, one cart line per user and product, order number) and `CHECK` constraints (non-negative price and stock, positive quantities), plus indexes for the query paths the application uses. `V2` inserts the two roles, `V3` adds the refresh token table, `V4` makes the product category mandatory and indexes active products by category, `V5` adds the order status history, shipping addresses, stored line totals and a check on the order status, and `V6` adds the idempotency key table. Hibernate runs with `ddl-auto=validate`, so a mismatch between the entities and the migrated schema fails startup instead of silently altering tables, and `open-in-view` is off, so every lazy association is loaded inside a service transaction.
+The schema is owned by Flyway migrations in `src/main/resources/db/migration` and applied on startup in every profile. `V1` creates the tables with primary and foreign keys, `NOT NULL`, `UNIQUE` (user email, product SKU, one cart line per user and product, order number) and `CHECK` constraints (non-negative price and stock, positive quantities), plus indexes for the query paths the application uses. `V2` inserts the two roles, `V3` adds the refresh token table, `V4` makes the product category mandatory and indexes active products by category, `V5` adds the order status history, shipping addresses, stored line totals and a check on the order status, `V6` adds the idempotency key table, and `V7` adds the payments table. Hibernate runs with `ddl-auto=validate`, so a mismatch between the entities and the migrated schema fails startup instead of silently altering tables, and `open-in-view` is off, so every lazy association is loaded inside a service transaction.
 
 Every entity extends `BaseEntity`, which carries the id, `createdAt`, `updatedAt`, `createdBy` and `lastModifiedBy`. The timestamps come from the application `Clock` and the auditor is the authenticated user's email, or `system` when no user is authenticated. `Product` and `Order` carry a `@Version` column for optimistic locking. Order numbers have the form `ORD-2026-000123` and are taken from a per-year counter table in its own short transaction.
 
@@ -178,7 +208,8 @@ Each request gets a correlation id: the value of the `X-Correlation-Id` request 
 | `GET`  | `/api/v1/me/orders` | CUSTOMER, ADMIN | List my orders (paged) |
 | `POST` | `/api/v1/me/orders` | CUSTOMER, ADMIN | Place an order from my cart; requires `Idempotency-Key` |
 | `GET`  | `/api/v1/me/orders/{id}` | CUSTOMER, ADMIN | One of my orders with its status history |
-| `POST` | `/api/v1/me/orders/{id}/cancel` | CUSTOMER, ADMIN | Cancel one of my orders that has not shipped |
+| `POST` | `/api/v1/me/orders/{id}/cancel` | CUSTOMER, ADMIN | Cancel one of my orders that has not shipped; a paid order is refunded |
+| `POST` | `/api/v1/me/orders/{id}/payments` | CUSTOMER, ADMIN | Pay for one of my orders with CARD, UPI or COD |
 | `GET`  | `/api/v1/admin/users` | ADMIN | List users |
 | `GET`  | `/api/v1/admin/users/{id}` | ADMIN | Get any user |
 | `GET`  | `/api/v1/admin/users/{id}/orders` | ADMIN | List any user's orders (paged) |
@@ -210,8 +241,11 @@ src/main/java/com/darshan/ecommerce/
 ├── category/    # product categories
 ├── product/     # product entity, public catalogue and admin product endpoints
 ├── cart/        # cart lines, cart rules and totals, the /me/cart endpoints
-├── order/       # orders and lines, status lifecycle and history, idempotent placement, /me/orders and admin order endpoints
+├── order/       # orders and lines, status lifecycle and history, idempotent placement, order events, /me/orders and admin order endpoints
+├── payment/     # payment attempts, processors per method, gateway, refunds, /me/orders/{id}/payments
+├── notification/ # order emails sent after commit
 └── common/
+    ├── async/       # @Async executor, context-copying task decorator, uncaught exception handler
     ├── config/      # typed settings, clock, JPA auditing, Redis caches, scheduling, development seed data
     ├── crypto/      # SHA-256 helper
     ├── exception/   # problem detail factory and global error handling
