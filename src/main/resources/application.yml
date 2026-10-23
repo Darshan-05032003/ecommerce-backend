@@ -7,7 +7,8 @@ spring:
     password: ${DB_PASSWORD:ecommerce}
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
+    open-in-view: false
 
 server:
   port: ${SERVER_PORT:8081}
