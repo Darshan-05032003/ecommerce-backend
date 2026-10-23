@@ -14,9 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -26,15 +24,18 @@ public class OrderService {
     private final CartItemRepository cartItemRepository;
     private final UserRepository userRepository;
     private final ProductService productService;
+    private final OrderNumberGenerator orderNumberGenerator;
 
     public OrderService(OrderRepository orderRepository,
                         CartItemRepository cartItemRepository,
                         UserRepository userRepository,
-                        ProductService productService) {
+                        ProductService productService,
+                        OrderNumberGenerator orderNumberGenerator) {
         this.orderRepository = orderRepository;
         this.cartItemRepository = cartItemRepository;
         this.userRepository = userRepository;
         this.productService = productService;
+        this.orderNumberGenerator = orderNumberGenerator;
     }
 
     public Page<OrderResponseDTO> listOrdersForUser(Long userId, Pageable pageable) {
@@ -49,35 +50,18 @@ public class OrderService {
             throw new BusinessRuleViolationException("Cart is empty");
         }
 
-        List<OrderItem> orderItems = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
-
         for (CartItem cartItem : cartItems) {
             productService.decreaseStock(cartItem.getProduct().getId(), cartItem.getQuantity());
-
-            BigDecimal lineTotal = cartItem.getProduct()
-                    .getPrice()
-                    .multiply(BigDecimal.valueOf(cartItem.getQuantity()));
-            total = total.add(lineTotal);
-
-            OrderItem orderItem = OrderItem.builder()
-                    .product(cartItem.getProduct())
-                    .quantity(cartItem.getQuantity())
-                    .price(cartItem.getProduct().getPrice())
-                    .build();
-            orderItems.add(orderItem);
+            total = total.add(cartItem.getProduct().getPrice()
+                    .multiply(BigDecimal.valueOf(cartItem.getQuantity())));
         }
 
-        Order order = Order.builder()
-                .user(user)
-                .totalAmount(total)
-                .status(Order.OrderStatus.CREATED)
-                .build();
-
-        for (OrderItem item : orderItems) {
-            item.setOrder(order);
+        Order order = new Order(orderNumberGenerator.next(), user, total);
+        for (CartItem cartItem : cartItems) {
+            order.addItem(new OrderItem(cartItem.getProduct(), cartItem.getQuantity(),
+                    cartItem.getProduct().getPrice()));
         }
-        order.setItems(orderItems);
 
         Order saved = orderRepository.save(order);
         cartItemRepository.deleteByUser(user);
@@ -88,28 +72,24 @@ public class OrderService {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + userId));
     }
-    
+
     private OrderResponseDTO mapToDTO(Order order) {
         OrderResponseDTO dto = new OrderResponseDTO();
         dto.setId(order.getId());
+        dto.setOrderNumber(order.getOrderNumber());
         dto.setUserId(order.getUser().getId());
         dto.setTotalAmount(order.getTotalAmount());
         dto.setStatus(order.getStatus().name());
         dto.setCreatedAt(order.getCreatedAt());
-        
-        if (order.getItems() != null) {
-            dto.setItems(order.getItems().stream().map(item -> {
-                OrderItemResponseDTO itemDTO = new OrderItemResponseDTO();
-                itemDTO.setId(item.getId());
-                itemDTO.setProductId(item.getProduct().getId());
-                itemDTO.setProductName(item.getProduct().getName());
-                itemDTO.setQuantity(item.getQuantity());
-                itemDTO.setPrice(item.getPrice());
-                return itemDTO;
-            }).collect(Collectors.toList()));
-        }
-        
+        dto.setItems(order.getItems().stream().map(item -> {
+            OrderItemResponseDTO itemDTO = new OrderItemResponseDTO();
+            itemDTO.setId(item.getId());
+            itemDTO.setProductId(item.getProduct().getId());
+            itemDTO.setProductName(item.getProduct().getName());
+            itemDTO.setQuantity(item.getQuantity());
+            itemDTO.setPrice(item.getPrice());
+            return itemDTO;
+        }).toList());
         return dto;
     }
 }
-

@@ -27,13 +27,7 @@ public class ProductController {
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Create a new product (Admin only)")
     public ResponseEntity<ProductResponseDTO> create(@RequestBody @Valid CreateProductRequestDTO requestDTO) {
-        Product product = new Product();
-        product.setName(requestDTO.getName());
-        product.setDescription(requestDTO.getDescription());
-        product.setPrice(requestDTO.getPrice());
-        product.setStockQuantity(requestDTO.getStockQuantity());
-        
-        ProductResponseDTO created = productService.create(product);
+        ProductResponseDTO created = productService.create(requestDTO);
         return ResponseEntity
                 .created(URI.create("/api/products/" + created.getId()))
                 .body(created);
@@ -60,12 +54,7 @@ public class ProductController {
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Update an existing product (Admin only)")
     public ProductResponseDTO update(@PathVariable Long id, @RequestBody @Valid CreateProductRequestDTO requestDTO) {
-        Product product = new Product();
-        product.setName(requestDTO.getName());
-        product.setDescription(requestDTO.getDescription());
-        product.setPrice(requestDTO.getPrice());
-        product.setStockQuantity(requestDTO.getStockQuantity());
-        return productService.update(id, product);
+        return productService.update(id, requestDTO);
     }
 
     @DeleteMapping("/{id}")

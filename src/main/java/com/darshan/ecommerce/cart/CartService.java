@@ -45,11 +45,7 @@ public class CartService {
 
         CartItem cartItem = cartItemRepository
                 .findByUserIdAndProductId(userId, productId)
-                .orElseGet(() -> CartItem.builder()
-                        .user(user)
-                        .product(product)
-                        .quantity(0)
-                        .build());
+                .orElseGet(() -> new CartItem(user, product, 0));
 
         cartItem.setQuantity(cartItem.getQuantity() + quantity);
         return mapToDTO(cartItemRepository.save(cartItem));
