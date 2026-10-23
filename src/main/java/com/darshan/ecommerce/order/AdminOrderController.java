@@ -1,9 +1,12 @@
 package com.darshan.ecommerce.order;
 
+import com.darshan.ecommerce.common.openapi.ApiErrorResponses;
+import com.darshan.ecommerce.common.openapi.ApiTags;
 import com.darshan.ecommerce.common.web.PageParams;
 import com.darshan.ecommerce.common.web.PageResponse;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
@@ -19,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/admin")
 @PreAuthorize("hasRole('ADMIN')")
-@Tag(name = "Admin: orders", description = "Order administration")
+@Tag(name = ApiTags.ADMIN)
 public class AdminOrderController {
 
     private final OrderService orderService;
@@ -37,18 +40,25 @@ public class AdminOrderController {
 
     @GetMapping("/orders/{id}")
     @Operation(summary = "Get any order with its status history")
+    @ApiResponse(responseCode = "200", description = "The order with its lines and status history")
+    @ApiResponse(responseCode = "404", ref = ApiErrorResponses.NOT_FOUND)
     public OrderDetailResponse get(@PathVariable Long id) {
         return orderService.get(id);
     }
 
     @PatchMapping("/orders/{id}/status")
     @Operation(summary = "Move an order to another status; cancelling returns the stock")
+    @ApiResponse(responseCode = "200", description = "The order with its updated status history")
+    @ApiResponse(responseCode = "404", ref = ApiErrorResponses.NOT_FOUND)
+    @ApiResponse(responseCode = "409", ref = ApiErrorResponses.CONFLICT)
     public OrderDetailResponse changeStatus(@PathVariable Long id, @Valid @RequestBody UpdateOrderStatusRequest request) {
         return orderService.changeStatus(id, request);
     }
 
     @GetMapping("/users/{userId}/orders")
     @Operation(summary = "List the orders of any user")
+    @ApiResponse(responseCode = "200", description = "One page of the user's orders")
+    @ApiResponse(responseCode = "404", ref = ApiErrorResponses.NOT_FOUND)
     public PageResponse<OrderResponse> listForUser(@PathVariable Long userId,
                                                    @ParameterObject @Valid PageParams pageParams) {
         return orderService.listAnyUsersOrders(userId, pageParams.toPageable(OrderController.SORT));
