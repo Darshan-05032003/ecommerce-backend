@@ -1,6 +1,5 @@
 package com.darshan.ecommerce.cart;
 
-import com.darshan.ecommerce.category.Category;
 import com.darshan.ecommerce.common.exception.BusinessRuleViolationException;
 import com.darshan.ecommerce.common.exception.ResourceNotFoundException;
 import com.darshan.ecommerce.product.Product;
@@ -16,14 +15,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
+import static com.darshan.ecommerce.product.ProductTestData.aProduct;
+import static com.darshan.ecommerce.user.UserTestData.aUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,10 +57,8 @@ class CartServiceTest {
     @BeforeEach
     void setUp() {
         cartService = new CartService(cartItemRepository, productRepository, userRepository, transactionManager);
-        user = new User("alice@example.com", "hash", "Alice", Set.of());
-        product = new Product("BK-001", "Effective Java", "Third edition", new BigDecimal("19.99"), 20,
-                new Category("Books", null));
-        ReflectionTestUtils.setField(product, "id", PRODUCT_ID);
+        user = aUser().build();
+        product = aProduct().id(PRODUCT_ID).price("19.99").stock(20).build();
     }
 
     @Test

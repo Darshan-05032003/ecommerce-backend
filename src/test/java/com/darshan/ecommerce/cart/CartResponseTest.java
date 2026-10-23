@@ -1,24 +1,21 @@
 package com.darshan.ecommerce.cart;
 
-import com.darshan.ecommerce.category.Category;
-import com.darshan.ecommerce.product.Product;
 import com.darshan.ecommerce.user.User;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Set;
 
+import static com.darshan.ecommerce.product.ProductTestData.aProduct;
+import static com.darshan.ecommerce.user.UserTestData.aUser;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class CartResponseTest {
 
-    private static final User USER = new User("alice@example.com", "hash", "Alice", Set.of());
-    private static final Category CATEGORY = new Category("General", null);
+    private static final User USER = aUser().build();
 
     @Test
     void mapsALineFromTheCurrentProductState() {
@@ -82,8 +79,6 @@ class CartResponseTest {
     }
 
     private static CartItem item(Long productId, String sku, String price, int quantity) {
-        Product product = new Product(sku, "Product " + sku, "Description", new BigDecimal(price), 100, CATEGORY);
-        ReflectionTestUtils.setField(product, "id", productId);
-        return new CartItem(USER, product, quantity);
+        return new CartItem(USER, aProduct().id(productId).sku(sku).price(price).stock(100).build(), quantity);
     }
 }

@@ -17,6 +17,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
 import java.util.Optional;
 
+import static com.darshan.ecommerce.product.ProductTestData.aProduct;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -44,8 +45,8 @@ class ProductServiceTest {
         productService = new ProductService(productRepository, categoryRepository, new ProductMapperImpl());
         books = category(1L, "Books");
         electronics = category(2L, "Electronics");
-        product = new Product("BK-JAVA-001", "Effective Java", "Third edition", new BigDecimal("2800.00"), 40, books);
-        ReflectionTestUtils.setField(product, "id", 10L);
+        product = aProduct().id(10L).sku("BK-JAVA-001").name("Effective Java").price("2800.00").stock(40)
+                .category(books).build();
         ReflectionTestUtils.setField(product, "version", 3);
     }
 

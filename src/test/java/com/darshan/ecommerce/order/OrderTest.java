@@ -1,26 +1,23 @@
 package com.darshan.ecommerce.order;
 
-import com.darshan.ecommerce.category.Category;
-import com.darshan.ecommerce.product.Product;
-
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 
+import static com.darshan.ecommerce.order.OrderTestData.anOrder;
+import static com.darshan.ecommerce.product.ProductTestData.aProduct;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OrderTest {
 
-    private final Category category = new Category("Books", null);
-
     @Test
     void totalIsTheSumOfTheRoundedLineTotals() {
-        Order order = new Order("ORD-2026-000001", null, "1 Main Street");
+        Order order = anOrder().build();
 
-        order.addItem(new OrderItem(product("1.005"), 1, new BigDecimal("1.005")));
-        order.addItem(new OrderItem(product("1.005"), 1, new BigDecimal("1.005")));
-        order.addItem(new OrderItem(product("19.99"), 2, new BigDecimal("19.99")));
+        order.addItem(line("1.005", 1));
+        order.addItem(line("1.005", 1));
+        order.addItem(line("19.99", 2));
 
         assertThat(order.getItems()).extracting(OrderItem::getLineTotal)
                 .containsExactly(new BigDecimal("1.00"), new BigDecimal("1.00"), new BigDecimal("39.98"));
@@ -29,9 +26,9 @@ class OrderTest {
 
     @Test
     void removingALineSubtractsItsTotal() {
-        Order order = new Order("ORD-2026-000002", null, "1 Main Street");
-        OrderItem pen = new OrderItem(product("5.05"), 3, new BigDecimal("5.05"));
-        order.addItem(new OrderItem(product("19.99"), 1, new BigDecimal("19.99")));
+        Order order = anOrder().build();
+        OrderItem pen = line("5.05", 3);
+        order.addItem(line("19.99", 1));
         order.addItem(pen);
 
         order.removeItem(pen);
@@ -41,8 +38,19 @@ class OrderTest {
     }
 
     @Test
+    void removingALineOfAnotherOrderChangesNothing() {
+        Order order = anOrder().line(aProduct().price("19.99").build(), 1).build();
+        OrderItem foreign = anOrder().line(aProduct().price("5.00").build(), 1).build().getItems().getFirst();
+
+        order.removeItem(foreign);
+
+        assertThat(order.getTotalAmount()).isEqualTo(new BigDecimal("19.99"));
+        assertThat(foreign.getOrder()).isNotNull();
+    }
+
+    @Test
     void aNewOrderStartsCreatedAndReportsThePreviousStatusOnAChange() {
-        Order order = new Order("ORD-2026-000003", null, "1 Main Street");
+        Order order = anOrder().build();
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CREATED);
         assertThat(order.changeStatus(OrderStatus.PAID)).isEqualTo(OrderStatus.CREATED);
@@ -51,14 +59,14 @@ class OrderTest {
 
     @Test
     void anInvalidChangeLeavesTheStatusAlone() {
-        Order order = new Order("ORD-2026-000004", null, "1 Main Street");
+        Order order = anOrder().build();
 
         assertThatThrownBy(() -> order.changeStatus(OrderStatus.DELIVERED))
                 .isInstanceOf(InvalidOrderStateException.class);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CREATED);
     }
 
-    private Product product(String price) {
-        return new Product("BK-001", "Book", "Book", new BigDecimal(price), 10, category);
+    private static OrderItem line(String price, int quantity) {
+        return new OrderItem(aProduct().price(price).build(), quantity, new BigDecimal(price));
     }
 }

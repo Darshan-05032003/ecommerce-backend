@@ -1,17 +1,15 @@
 package com.darshan.ecommerce.cart;
 
-import com.darshan.ecommerce.category.Category;
 import com.darshan.ecommerce.common.exception.BusinessRuleViolationException;
 import com.darshan.ecommerce.product.Product;
+import com.darshan.ecommerce.product.ProductTestData;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.test.util.ReflectionTestUtils;
 
-import java.math.BigDecimal;
-
+import static com.darshan.ecommerce.product.ProductTestData.aProduct;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -76,10 +74,7 @@ class CartRulesTest {
     }
 
     private static Product product(boolean active, int stock) {
-        Product product = new Product("CRT-001", "Cart product", "Description", new BigDecimal("10.00"), stock,
-                new Category("General", null));
-        ReflectionTestUtils.setField(product, "id", 7L);
-        product.setActive(active);
-        return product;
+        ProductTestData product = aProduct().id(7L).stock(stock);
+        return active ? product.build() : product.inactive().build();
     }
 }
