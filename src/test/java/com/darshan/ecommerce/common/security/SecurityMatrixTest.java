@@ -4,7 +4,10 @@ import com.darshan.ecommerce.IntegrationTest;
 import com.darshan.ecommerce.IntegrationTestSupport.TestApi;
 import com.darshan.ecommerce.cart.CartItem;
 import com.darshan.ecommerce.cart.CartItemRepository;
+import com.darshan.ecommerce.order.OrderPlacementService;
+import com.darshan.ecommerce.order.PlaceOrderRequest;
 import com.darshan.ecommerce.product.Product;
+import com.darshan.ecommerce.product.ProductRepository;
 import com.darshan.ecommerce.user.AdminUserController;
 import com.darshan.ecommerce.user.UserRepository;
 import com.darshan.ecommerce.user.UserResponse;
@@ -31,6 +34,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
@@ -68,6 +72,12 @@ class SecurityMatrixTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private OrderPlacementService placementService;
+
+    @Autowired
+    private ProductRepository productRepository;
+
     private Long customerId;
     private Long adminId;
     private String customerToken;
@@ -75,6 +85,8 @@ class SecurityMatrixTest {
     private Long categoryId;
     private Long emptyCategoryId;
     private Long productId;
+    private Long customerOrderId;
+    private Long adminOrderId;
 
     @BeforeAll
     void createUsers() throws Exception {
@@ -87,16 +99,26 @@ class SecurityMatrixTest {
     }
 
     // A fresh product and an empty category per invocation keep the DELETE and PUT cases independent.
-    // Both callers get the product in their cart, so the cart line endpoints have a line to act on.
+    // Each caller gets a fresh order of their own (so cancel and the admin status change start from
+    // CREATED) and then the product in their cart again, so the cart and order endpoints have data.
     @BeforeEach
-    void freshProductAndCategory() {
+    void freshProductCategoryAndOrders() {
+        cartItemRepository.deleteAllInBatch();
         int n = COUNTER.incrementAndGet();
         Product product = api.createProduct("MTX-" + n, 5);
         productId = product.getId();
         emptyCategoryId = api.createCategory("Empty " + n).getId();
+        customerOrderId = placeOrder(customerId, product);
+        adminOrderId = placeOrder(adminId, product);
         for (Long userId : List.of(customerId, adminId)) {
             cartItemRepository.save(new CartItem(userRepository.getReferenceById(userId), product, 1));
         }
+    }
+
+    private Long placeOrder(Long userId, Product product) {
+        cartItemRepository.save(new CartItem(userRepository.getReferenceById(userId), product, 1));
+        return placementService.place(userId, UUID.randomUUID().toString(), new PlaceOrderRequest("Matrix street"))
+                .order().id();
     }
 
     static Stream<Arguments> matrix() {
@@ -108,6 +130,12 @@ class SecurityMatrixTest {
                 row(HttpMethod.DELETE, "/api/v1/me/cart/items/{productId}", 401, 204, 204),
                 row(HttpMethod.DELETE, "/api/v1/me/cart", 401, 204, 204),
                 row(HttpMethod.GET, "/api/v1/me/orders", 401, 200, 200),
+                row(HttpMethod.POST, "/api/v1/me/orders", 401, 201, 201),
+                row(HttpMethod.GET, "/api/v1/me/orders/{myOrderId}", 401, 200, 200),
+                row(HttpMethod.POST, "/api/v1/me/orders/{myOrderId}/cancel", 401, 200, 200),
+                row(HttpMethod.GET, "/api/v1/admin/orders", 401, 403, 200),
+                row(HttpMethod.GET, "/api/v1/admin/orders/{customerOrderId}", 401, 403, 200),
+                row(HttpMethod.PATCH, "/api/v1/admin/orders/{customerOrderId}/status", 401, 403, 200),
                 row(HttpMethod.GET, "/api/v1/admin/users", 401, 403, 200),
                 row(HttpMethod.GET, "/api/v1/admin/users/{customerId}", 401, 403, 200),
                 row(HttpMethod.GET, "/api/v1/admin/users/{customerId}/orders", 401, 403, 200),
@@ -140,10 +168,15 @@ class SecurityMatrixTest {
                 .replace("{productId}", String.valueOf(productId))
                 .replace("{customerId}", String.valueOf(customerId))
                 .replace("{categoryId}", String.valueOf(categoryId))
-                .replace("{emptyCategoryId}", String.valueOf(emptyCategoryId));
+                .replace("{emptyCategoryId}", String.valueOf(emptyCategoryId))
+                .replace("{customerOrderId}", String.valueOf(customerOrderId))
+                .replace("{myOrderId}", String.valueOf(caller == Caller.ADMIN ? adminOrderId : customerOrderId));
         MockHttpServletRequestBuilder builder = request(method, path);
         if (method == HttpMethod.POST || method == HttpMethod.PUT || method == HttpMethod.PATCH) {
             builder.contentType(MediaType.APPLICATION_JSON).content(api.json(bodyFor(method, path)));
+        }
+        if (method == HttpMethod.POST && path.equals("/api/v1/me/orders")) {
+            builder.header("Idempotency-Key", UUID.randomUUID().toString());
         }
         tokenFor(caller).ifPresent(token -> builder.header(HttpHeaders.AUTHORIZATION, "Bearer " + token));
 
@@ -213,6 +246,12 @@ class SecurityMatrixTest {
     }
 
     private Map<String, Object> bodyFor(HttpMethod method, String path) {
+        if (path.startsWith("/api/v1/me/orders")) {
+            return Map.of("shippingAddress", "Matrix street");
+        }
+        if (path.startsWith("/api/v1/admin/orders")) {
+            return Map.of("status", "PAID");
+        }
         if (path.startsWith("/api/v1/me/cart")) {
             return method == HttpMethod.POST ? Map.of("productId", productId, "quantity", 1) : Map.of("quantity", 1);
         }
@@ -226,7 +265,8 @@ class SecurityMatrixTest {
                 "categoryId", categoryId));
         if (method == HttpMethod.PUT) {
             body.put("active", true);
-            body.put("version", 0);
+            // The orders placed before each invocation reserved stock, which bumps the version.
+            body.put("version", productRepository.findById(productId).orElseThrow().getVersion());
         }
         return body;
     }
