@@ -36,6 +36,8 @@ app:
     login:
       attempts: 5
       window: 1m
+  payments:
+    gateway: ${PAYMENT_GATEWAY:simulated}
   orders:
     idempotency-key-retention: ${ORDER_IDEMPOTENCY_KEY_RETENTION:24h}
     idempotency-cleanup-cron: ${ORDER_IDEMPOTENCY_CLEANUP_CRON:0 15 * * * *}
