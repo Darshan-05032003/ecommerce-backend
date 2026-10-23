@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -115,6 +116,20 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.detail").value("The request collided with a concurrent request, retry it"));
     }
 
+    // A unique index can be what decides a race (two registrations with one email), so the
+    // violation is a 409, but the SQL message names the index and the value and stays in the log.
+    @Test
+    void aConstraintViolationIs409WithoutTheDatabaseMessage() throws Exception {
+        MvcResult result = mockMvc.perform(get("/probe/duplicate"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("The request conflicts with existing data"))
+                .andReturn();
+
+        assertThat(result.getResponse().getContentAsString())
+                .doesNotContain("alice@example.com")
+                .doesNotContain("uk_users_email");
+    }
+
     @Test
     void accessDeniedIs403() throws Exception {
         mockMvc.perform(get("/probe/forbidden"))
@@ -198,6 +213,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/deadlock")
         void deadlock() {
             throw new CannotAcquireLockException("Deadlock found when trying to get lock");
+        }
+
+        @GetMapping("/duplicate")
+        void duplicate() {
+            throw new DataIntegrityViolationException("Duplicate entry 'alice@example.com' for key 'uk_users_email'");
         }
 
         @GetMapping("/forbidden")
